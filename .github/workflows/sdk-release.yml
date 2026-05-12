@@ -50,6 +50,15 @@ jobs:
     name: version or publish
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # `npm-publish` is a GitHub Environment with required reviewers.
+    # Every run of this job pauses for manual approval before any step
+    # executes — including the version-PR-opening branch, not just the
+    # actual `npm publish`. The cost: one click per main-push. The
+    # payoff: even a malicious workflow modification can't quietly
+    # publish a tarball; you have to physically approve each run.
+    environment:
+      name: npm-publish
+      url: https://www.npmjs.com/package/scorezilla
     steps:
       - uses: actions/checkout@v4
         with:
