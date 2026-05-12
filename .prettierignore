@@ -9,3 +9,7 @@ pnpm-lock.yaml
 # Changesets bookkeeping (auto-generated)
 .changeset/*.md
 !.changeset/README.md
+# `pre.json` is rewritten by `changesets/action` during the Version PR; its
+# array formatting collides with prettier (changesets expands, prettier wants
+# inline). Skip it — this is tool state, not source we author.
+.changeset/pre.json

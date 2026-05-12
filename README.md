@@ -18,9 +18,11 @@ AI-vibe-coded games.
 - **Private.** No cookies, no `localStorage`, no fingerprinting beyond runtime
   detection — see [COMPATIBILITY.md](./COMPATIBILITY.md).
 
-> **Status:** v0.1.0 ships the **public-key client** (browser-safe). The HMAC
-> server adapter (`scorezilla/server`) lands in v0.2.0; React
-> (`scorezilla/react`) in v0.3.0; Phaser (`scorezilla/phaser`) in v0.4.0. See
+> **Status:** the v0.1.0 line ships the **public-key client** (browser-safe);
+> the first preview is published on the `next` dist-tag
+> (`npm install scorezilla@next`) ahead of the stable cut. The HMAC server
+> adapter (`scorezilla/server`) lands in v0.2.0; React (`scorezilla/react`)
+> in v0.3.0; Phaser (`scorezilla/phaser`) in v0.4.0. See
 > [CHANGELOG.md](./CHANGELOG.md) and [VERSIONING.md](./VERSIONING.md).
 
 > **Commercial context.** Scorezilla is a hosted leaderboard service with free
@@ -42,10 +44,20 @@ bun add scorezilla
 
 ## Quickstart
 
+> **Preview note.** The hosted API at `https://api.scorezilla.dev` is being
+> stood up alongside the stable v0.1.0 cut. Until it's live, point the SDK
+> at your own running API instance via the `baseUrl` option (shown below).
+> When the hosted endpoint goes live, omitting `baseUrl` will pick up the
+> default and the example becomes copy-paste-runnable.
+
 ```ts
 import { Scorezilla, ScorezillaError } from 'scorezilla';
 
-const sz = new Scorezilla({ publicKey: 'pk_mygame_aBcDeF…' });
+const sz = new Scorezilla({
+  publicKey: 'pk_mygame_aBcDeF…',
+  // Remove once https://api.scorezilla.dev is live.
+  baseUrl: 'https://your-api.example.com',
+});
 
 try {
   const r = await sz.submitScore({
