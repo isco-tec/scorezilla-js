@@ -1,0 +1,144 @@
+{
+  "name": "scorezilla",
+  "version": "0.0.0",
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "description": "Official Scorezilla SDK — leaderboards for indie games, browser games, and AI-vibe-coded games.",
+  "keywords": [
+    "scorezilla",
+    "leaderboard",
+    "leaderboards",
+    "score-tracking",
+    "game-sdk",
+    "indie-game",
+    "phaser",
+    "react"
+  ],
+  "homepage": "https://github.com/isco-tec/scorezilla-js#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/isco-tec/scorezilla-js.git"
+  },
+  "bugs": {
+    "url": "https://github.com/isco-tec/scorezilla-js/issues"
+  },
+  "author": "Ori Iscovici <ori@scorezilla.dev>",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.11.0",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./server": {
+      "browser": "./dist/server-browser-stub.js",
+      "import": {
+        "types": "./dist/server.d.ts",
+        "default": "./dist/server.js"
+      },
+      "require": {
+        "types": "./dist/server.d.cts",
+        "default": "./dist/server.cjs"
+      }
+    },
+    "./react": {
+      "import": {
+        "types": "./dist/react.d.ts",
+        "default": "./dist/react.js"
+      },
+      "require": {
+        "types": "./dist/react.d.cts",
+        "default": "./dist/react.cjs"
+      }
+    },
+    "./phaser": {
+      "import": {
+        "types": "./dist/phaser.d.ts",
+        "default": "./dist/phaser.js"
+      },
+      "require": {
+        "types": "./dist/phaser.d.cts",
+        "default": "./dist/phaser.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "server": [
+        "./dist/server.d.ts"
+      ],
+      "react": [
+        "./dist/react.d.ts"
+      ],
+      "phaser": [
+        "./dist/phaser.d.ts"
+      ]
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "API.md",
+    "VERSIONING.md",
+    "COMPATIBILITY.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rm -rf dist coverage",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:unit": "vitest run --project=unit",
+    "test:integration": "vitest run --project=integration",
+    "test:coverage": "vitest run --project=unit --coverage",
+    "check:types-resolution": "attw --pack .",
+    "size": "size-limit",
+    "size:why": "size-limit --why",
+    "example:vanilla": "npx -y serve examples/vanilla",
+    "example:node-cli": "pnpm run build && node examples/node-cli/index.mjs",
+    "lint": "eslint src test",
+    "lint:fix": "eslint src test --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "changeset": "changeset",
+    "changeset:version": "changeset version",
+    "prepublishOnly": "pnpm run clean && pnpm run typecheck && pnpm run test:unit && pnpm run build && pnpm run check:types-resolution && pnpm run size"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.2",
+    "@changesets/changelog-github": "0.7.0",
+    "@changesets/cli": "2.31.0",
+    "@eslint/js": "^9.15.0",
+    "@size-limit/preset-small-lib": "^11.1.6",
+    "@vitest/coverage-v8": "~2.1.0",
+    "eslint": "^9.15.0",
+    "globals": "^15.13.0",
+    "jsdom": "^25.0.1",
+    "prettier": "^3.4.2",
+    "size-limit": "^11.1.6",
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.18.0",
+    "vitest": "~2.1.0"
+  }
+}

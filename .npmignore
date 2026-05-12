@@ -1,0 +1,32 @@
+# Belt-and-suspenders alongside the `files` allowlist in package.json.
+# If a future PR changes `files` and accidentally widens what gets packed,
+# this still keeps source / configs / tests out of the npm tarball.
+
+# Source — published bundle is in dist/
+src/
+test/
+
+# Examples — source-repo only, not part of the consumer-facing package.
+examples/
+
+# Build / test / type / lint / size config
+tsup.config.ts
+tsconfig.json
+vitest.config.ts
+vitest.workspace.ts
+.size-limit.cjs
+.eslintrc*
+.prettierrc*
+
+# Coverage and test artifacts
+coverage/
+.vitest-cache/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Misc
+*.log
+*.tsbuildinfo

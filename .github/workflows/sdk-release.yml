@@ -1,0 +1,209 @@
+name: SDK Release
+
+# Handles BOTH halves of the Changesets release flow:
+#
+#   1. When unmerged changesets exist on `main` — opens (or updates) a
+#      "Version Packages" PR that bumps `package.json`, updates
+#      `CHANGELOG.md`, and consumes the changeset files.
+#
+#   2. When that Version PR is merged (no unmerged changesets remain) —
+#      publishes the new version to npm with `--provenance`, creates a
+#      GitHub release, and appends SRI hashes to the release body so
+#      consumers can copy them into their `<script integrity="…">` tags.
+#
+# `changesets/action` detects which case applies and does the right thing.
+#
+# Prerequisites — must exist as repo secrets before the workflow's
+# publish branch can run:
+#   • NPM_TOKEN — npm Automation token (bypasses 2FA for CI publishes)
+#                  with write access to the `scorezilla` package
+#   • GITHUB_TOKEN — automatically provided by GH Actions
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A release is atomic-ish — don't let two runs race. We DO NOT cancel an
+# in-flight run; a half-completed release is worse than a queued one.
+concurrency:
+  group: sdk-release
+  cancel-in-progress: false
+
+permissions:
+  # Needed for: creating the GitHub release, pushing the Version PR.
+  contents: write
+  # Needed for: opening/updating the Version PR.
+  pull-requests: write
+  # Needed for: OIDC token used by `npm publish --provenance` to sign the
+  # tarball with a verifiable build-origin attestation.
+  id-token: write
+
+env:
+  PNPM_VERSION: '10.11.0'
+  # Enable provenance attestations — this repo is PUBLIC, so npm can
+  # verify the build origin against the sigstore bundle.
+  NPM_PUBLISH_WITH_PROVENANCE: '1'
+
+jobs:
+  release:
+    name: version or publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Changesets needs full history to compute the changelog diff
+          # across versions. Fetch-depth 0 = full clone.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          # Configures ~/.npmrc to authenticate against npm via NODE_AUTH_TOKEN.
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # ─── Hard gates — run BEFORE handing control to changesets/action.
+      # The publish branch of that action calls `npm publish` directly;
+      # any failure after that point ships a half-broken package. These
+      # checks duplicate sdk-ci.yml's PR gates intentionally — main can
+      # always merge a path the PR didn't exercise.
+      - name: Build SDK
+        run: pnpm build
+
+      - name: Unit tests
+        run: pnpm test:unit
+
+      - name: Types-resolution gate (attw)
+        run: pnpm check:types-resolution
+
+      - name: Bundle-size gate
+        run: pnpm size
+
+      # ─── The actual release step.
+      #
+      # `version:` script runs when there ARE unmerged changesets — Changesets
+      # bumps package.json + CHANGELOG.md and opens/updates the PR.
+      # `publish:` script runs when there are NO unmerged changesets and the
+      # tree's version is ahead of what's on npm — publishes to the registry.
+      # The action wires `NODE_AUTH_TOKEN` automatically from NPM_TOKEN.
+      - name: Changesets — version PR or publish
+        id: changesets
+        uses: changesets/action@v1.8.0
+        with:
+          version: pnpm changeset:version
+          # publish.sh routes to the right dist-tag based on the version
+          # string (stable → `latest`, `-next.N` → `next`, etc.) and adds
+          # `--provenance` when NPM_PUBLISH_WITH_PROVENANCE=1 (set above).
+          publish: bash scripts/publish.sh
+          title: 'chore(release): version scorezilla'
+          commit: 'chore(release): version scorezilla'
+          createGithubReleases: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # ─── SRI hash generation.
+      #
+      # Only runs when changesets/action actually published.
+      # Produces a markdown block listing SHA-384 hashes of every published JS
+      # entry under dist/. Consumers paste these into `<script integrity="…">`.
+      - name: Generate SRI block
+        if: steps.changesets.outputs.published == 'true'
+        id: sri
+        run: |
+          set -euo pipefail
+          dist=dist
+          out=/tmp/release-sri.md
+          {
+            echo "## Subresource Integrity (SRI)"
+            echo ""
+            echo "If loading this release from a CDN, pin both the version AND the SRI hash so a future tarball can't quietly change what runs in your page:"
+            echo ""
+            echo '| File | SHA-384 hash |'
+            echo '| --- | --- |'
+            for name in index.js index.cjs; do
+              file="$dist/$name"
+              if [ -f "$file" ]; then
+                hash="sha384-$(openssl dgst -sha384 -binary "$file" | openssl base64 -A)"
+                echo "| \`dist/$name\` | \`$hash\` |"
+              fi
+            done
+            echo ""
+            echo "Example (ESM):"
+            echo ""
+            echo '```html'
+            echo "<script"
+            echo '  type="module"'
+            echo "  src=\"https://cdn.jsdelivr.net/npm/scorezilla@VERSION/dist/index.js\""
+            echo '  integrity="<paste the dist/index.js hash from above>"'
+            echo '  crossorigin="anonymous"></script>'
+            echo '```'
+          } > "$out"
+          echo "Generated SRI block:"
+          echo "----"
+          cat "$out"
+          echo "----"
+
+      - name: Append SRI hashes to GitHub release
+        if: steps.changesets.outputs.published == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          packages='${{ steps.changesets.outputs.publishedPackages }}'
+          if [ -z "$packages" ] || [ "$packages" = "[]" ]; then
+            echo "No published packages reported by changesets/action — nothing to annotate."
+            exit 0
+          fi
+          sri_block=$(cat /tmp/release-sri.md)
+          echo "$packages" | jq -c '.[]' | while read -r row; do
+            name=$(echo "$row" | jq -r '.name')
+            version=$(echo "$row" | jq -r '.version')
+            tag="${name}@${version}"
+            echo "Annotating GitHub release $tag with SRI hashes…"
+            current=$(gh release view "$tag" --json body --jq '.body' 2>/dev/null || echo "")
+            new_body=$(printf '%s\n\n%s\n' "$current" "$sri_block")
+            gh release edit "$tag" --notes "$new_body"
+            echo "  → done"
+          done
+
+      # ─── Smoke-confirm the new tarball is installable.
+      - name: Post-publish smoke test
+        if: steps.changesets.outputs.published == 'true'
+        run: |
+          set -euo pipefail
+          packages='${{ steps.changesets.outputs.publishedPackages }}'
+          echo "$packages" | jq -c '.[]' | while read -r row; do
+            name=$(echo "$row" | jq -r '.name')
+            version=$(echo "$row" | jq -r '.version')
+            echo "Waiting for ${name}@${version} to appear on registry…"
+            for i in $(seq 1 30); do
+              if npm view "${name}@${version}" version > /dev/null 2>&1; then
+                echo "  → visible after ${i} attempt(s)"
+                break
+              fi
+              if [ "$i" = "30" ]; then
+                echo "  → did NOT appear within 30 attempts (~5 min); failing."
+                exit 1
+              fi
+              sleep 10
+            done
+            tmp=$(mktemp -d)
+            cd "$tmp"
+            npm init -y > /dev/null
+            npm install "${name}@${version}" --no-audit --no-fund > /dev/null
+            node -e "const p = require('$name'); if (!p.Scorezilla) throw new Error('Scorezilla export missing'); if (!p.SDK_VERSION || p.SDK_VERSION !== '$version') throw new Error('SDK_VERSION mismatch: expected $version, got ' + p.SDK_VERSION);"
+            echo "  → ${name}@${version} installs cleanly and exports the expected surface"
+            cd - > /dev/null
+            rm -rf "$tmp"
+          done

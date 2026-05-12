@@ -1,0 +1,15 @@
+# Bun-specific test config.
+#
+# Bun ships its own Jest-flavoured test runner (`bun test`) — different from
+# vitest, with a different config mechanism. It doesn't read
+# `vitest.workspace.ts` so the `setupFiles` shim that defines
+# `__SCOREZILLA_SDK_VERSION__` on globalThis never runs under Bun. Without
+# this preload, test files that import `src/client.ts` or `src/index.ts`
+# crash with "ReferenceError: __SCOREZILLA_SDK_VERSION__ is not defined"
+# because Bun evaluates the source directly (no tsup `define` substitution
+# at test time).
+#
+# Mirroring the vitest setup file here gives `bun test` the same shim.
+
+[test]
+preload = ["./test/_setup/sdk-version.ts"]

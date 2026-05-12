@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scorezilla SDK — vanilla example</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        font:
+          16px/1.5 system-ui,
+          sans-serif;
+        max-width: 42rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      input,
+      button {
+        font: inherit;
+        padding: 0.4rem 0.6rem;
+      }
+      label {
+        display: block;
+        margin: 0.6rem 0;
+      }
+      pre {
+        background: #f4f4f4;
+        padding: 1rem;
+        border-radius: 6px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      @media (prefers-color-scheme: dark) {
+        pre {
+          background: #1f1f1f;
+        }
+      }
+      .error {
+        color: #c00;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Scorezilla SDK — vanilla example</h1>
+    <p>
+      This page imports the SDK directly from jsDelivr and exercises the four public-key methods.
+      Fill in your public key + board ID below and try a submission.
+    </p>
+    <p>
+      <strong>SRI:</strong> the <code>&lt;script integrity="…"&gt;</code> hash for the CDN bundle is
+      published in the
+      <a href="https://github.com/isco-tec/scorezilla-js/releases">GitHub release</a>
+      notes for each version — copy it in to pin the bundle.
+    </p>
+
+    <form id="cfg">
+      <label>
+        Public key:
+        <input id="pk" type="text" placeholder="pk_mygame_aBcDeF…" required size="48" />
+      </label>
+      <label>
+        Board ID:
+        <input id="board" type="text" placeholder="board-uuid" required size="48" />
+      </label>
+      <label>
+        Player ID:
+        <input id="player" type="text" value="alice" required />
+      </label>
+      <label>
+        Score:
+        <input id="score" type="number" value="9001" required />
+      </label>
+      <button type="submit">Submit score + fetch board</button>
+    </form>
+
+    <h2>Output</h2>
+    <pre id="out">Awaiting input…</pre>
+
+    <!--
+      The SDK is loaded from a CDN in app.js. For a production page you
+      should pin a specific version and add an `integrity="sha384-..."`
+      attribute — the SRI hash for each release is published in the
+      GitHub release notes:
+        <script
+          src="https://cdn.jsdelivr.net/npm/scorezilla@<VERSION>/dist/index.js"
+          type="module"
+          integrity="sha384-…"
+          crossorigin="anonymous">
+    -->
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

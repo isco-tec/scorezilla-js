@@ -1,0 +1,193 @@
+name: SDK CI
+
+# Per-PR + main-push checks for the scorezilla SDK.
+#
+# `workflow_dispatch` lets us re-run on demand without re-pushing.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: sdk-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Pin pnpm in one place so all jobs match a known-good environment.
+  PNPM_VERSION: '10.11.0'
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────
+  # Quick gate: lint + format + typecheck. Fastest job — kills cheap-to-fix
+  # mistakes before the heavier matrix jobs warm up.
+  # ───────────────────────────────────────────────────────────────────────
+  lint-typecheck:
+    name: lint + typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format check
+        run: pnpm exec prettier --check '**/*.{ts,tsx,js,mjs,cjs,md,json,html,yml,yaml}'
+      - name: Lint
+        run: pnpm exec eslint src test
+      - name: Typecheck
+        run: pnpm typecheck
+
+  # ───────────────────────────────────────────────────────────────────────
+  # Unit-test matrix.
+  #
+  # Node 20 + 22 are HARD gates. Bun is best-effort (continue-on-error) for
+  # v0.1.0 — promoted to hard gate in v0.2.0 if stable.
+  # ───────────────────────────────────────────────────────────────────────
+  unit-tests:
+    name: unit (${{ matrix.runtime }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runtime: node-20
+            node-version: 20
+            continue-on-error: false
+          - runtime: node-22
+            node-version: 22
+            continue-on-error: false
+          - runtime: bun-latest
+            node-version: 22
+            install-bun: true
+            continue-on-error: true
+    continue-on-error: ${{ matrix.continue-on-error }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: pnpm
+      - if: matrix.install-bun
+        uses: oven-sh/setup-bun@v2
+      - run: pnpm install --frozen-lockfile
+      - name: Unit tests (Node)
+        if: '!matrix.install-bun'
+        run: pnpm test:unit
+      - name: Unit tests (Bun)
+        if: matrix.install-bun
+        run: bun test test/unit
+      - name: Coverage gate (Node 22 only, single source of truth)
+        if: matrix.runtime == 'node-22'
+        run: pnpm test:coverage
+      - name: Upload coverage report
+        if: matrix.runtime == 'node-22'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage
+          retention-days: 14
+
+  # ───────────────────────────────────────────────────────────────────────
+  # Build + types-resolution + bundle-size gates.
+  #
+  # `attw` is a HARD gate — bad exports maps are silent at test time and
+  # break at consumer install. `size-limit` enforces the 6 KB gzip ceiling
+  # so a regression can't quietly ship.
+  # ───────────────────────────────────────────────────────────────────────
+  build-and-size:
+    name: build + attw + size
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    needs: lint-typecheck
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm build
+      - name: attw — types-resolution gate
+        run: pnpm check:types-resolution
+      - name: size-limit — bundle-size gate
+        run: pnpm size
+
+  # ───────────────────────────────────────────────────────────────────────
+  # Supply-chain hygiene gates.
+  #
+  # `pnpm audit` — catches known CVEs in the dependency tree.
+  # `npm audit signatures` — verifies registry signatures of every package.
+  # `--ignore-scripts` install — proves no dep declares a postinstall script,
+  #     which is the canonical malware-delivery vector for npm.
+  # ───────────────────────────────────────────────────────────────────────
+  supply-chain:
+    name: supply-chain hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: pnpm audit (production tree)
+        run: pnpm audit --prod || true
+      - name: npm audit signatures
+        run: npm audit signatures
+      - name: Re-install with --ignore-scripts (catches postinstall malware)
+        run: |
+          mkdir -p /tmp/ignore-scripts-check
+          cp pnpm-lock.yaml package.json /tmp/ignore-scripts-check/
+          cd /tmp/ignore-scripts-check
+          pnpm install --frozen-lockfile --ignore-scripts
+
+  # ───────────────────────────────────────────────────────────────────────
+  # Belt-and-suspenders gate: actually run the prepublishOnly chain so a
+  # working-tree regression in any of its steps surfaces here, not in the
+  # release workflow.
+  # ───────────────────────────────────────────────────────────────────────
+  prepublish-dry-run:
+    name: prepublishOnly dry-run
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [lint-typecheck, build-and-size]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run prepublishOnly chain
+        run: |
+          pnpm run clean
+          pnpm run typecheck
+          pnpm run test:unit
+          pnpm run build
+          pnpm run check:types-resolution
+          pnpm run size

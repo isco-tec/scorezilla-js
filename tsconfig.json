@@ -1,0 +1,46 @@
+{
+  // TypeScript config for the scorezilla SDK.
+  //
+  // `exactOptionalPropertyTypes: true` gotcha — when consumers spread an
+  // optional field (e.g. `{ ...other, metadata }`) into a Scorezilla payload,
+  // TS treats `metadata: T | undefined` differently from `metadata?: T`. The
+  // public types here use the `?:` form; the compatibility note in
+  // COMPATIBILITY.md documents the spread workaround.
+  //
+  // `lib` adds `DOM` because the SDK runs in browsers and uses fetch /
+  // AbortSignal / crypto.subtle. The build targets ES2022 (`moduleResolution:
+  // bundler`) for both Node 20+ and modern browsers; no DOM-only globals are
+  // referenced from the public surface, but the types must compile against
+  // the standard browser lib.
+  //
+  // `incremental: false` — tsup's dts worker invokes tsc with options-only
+  // (no tsconfig file resolvable) and errors under `incremental: true`
+  // without a tsBuildInfoFile. tsc here is `--noEmit` only — incremental
+  // doesn't apply.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "verbatimModuleSyntax": true,
+    "forceConsistentCasingInFileNames": true,
+    "allowImportingTsExtensions": false,
+    "incremental": false,
+    "noEmit": true,
+    "rootDir": "src",
+    "types": []
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["dist", "node_modules", "test"]
+}

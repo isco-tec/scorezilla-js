@@ -1,0 +1,11 @@
+# Build outputs
+dist/
+coverage/
+
+# Deps
+node_modules/
+pnpm-lock.yaml
+
+# Changesets bookkeeping (auto-generated)
+.changeset/*.md
+!.changeset/README.md
