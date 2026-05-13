@@ -5,6 +5,7 @@
     "scorezilla": "0.0.0"
   },
   "changesets": [
-    "initial-release"
+    "initial-release",
+    "server-hmac-adapter"
   ]
 }
