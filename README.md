@@ -18,12 +18,13 @@ AI-vibe-coded games.
 - **Private.** No cookies, no `localStorage`, no fingerprinting beyond runtime
   detection — see [COMPATIBILITY.md](./COMPATIBILITY.md).
 
-> **Status:** the v0.1.0 line ships the **public-key client** (browser-safe);
-> the first preview is published on the `next` dist-tag
-> (`npm install scorezilla@next`) ahead of the stable cut. The HMAC server
-> adapter (`scorezilla/server`) lands in v0.2.0; React (`scorezilla/react`)
-> in v0.3.0; Phaser (`scorezilla/phaser`) in v0.4.0. See
-> [CHANGELOG.md](./CHANGELOG.md) and [VERSIONING.md](./VERSIONING.md).
+> **Status:** v0.1.0 ships the **public-key client** (browser-safe).
+> v0.2.0 ships the **HMAC server adapter** (`scorezilla/server`) for
+> game backends that need cheat-resistant submissions. React
+> (`scorezilla/react`) lands in v0.3.0; Phaser (`scorezilla/phaser`) in
+> v0.4.0. The first preview is on the `next` dist-tag — install with
+> `npm install scorezilla@next`. See [CHANGELOG.md](./CHANGELOG.md) and
+> [VERSIONING.md](./VERSIONING.md).
 
 > **Commercial context.** Scorezilla is a hosted leaderboard service with free
 > and paid tiers — see [scorezilla.dev/pricing](https://scorezilla.dev/pricing).
@@ -77,6 +78,36 @@ await sz.getWindowAround({ boardId, playerId, before?, after? });
 
 See [**API.md**](./API.md) for the full reference, including every response
 field, every error code, and advanced patterns.
+
+## Server-side HMAC (`scorezilla/server`)
+
+Public-key submissions are client-authoritative — anyone with your `pk_` can
+submit any score from devtools. For games where ranking matters, sign each
+submission server-side with a `sk_live_*` secret:
+
+```ts
+import { Scorezilla, ScorezillaError } from 'scorezilla/server';
+
+const sz = new Scorezilla({
+  secretKey: {
+    id: process.env.SCOREZILLA_KEY_ID!,
+    secret: process.env.SCOREZILLA_KEY_SECRET!, // never ship to a browser
+  },
+});
+
+await sz.submitScore({ boardId, playerId, score, metadata });
+```
+
+Same method shape as the public-key client — `submitScore`, `getLeaderboard`,
+`getPlayerRank`, `getWindowAround`. The adapter signs every request with
+**HMAC-SHA256** over a canonical string (method + path + ts + nonce +
+sha256(body)), and the API verifies before any state change. Replay
+protection is enforced server-side via a 10-minute nonce window.
+
+The `scorezilla/server` subpath is server-only — importing it from the
+browser throws at module evaluation. Use environment variables (or your
+secret manager) to load the `sk_live_*` value; never embed it in a build
+that ships to clients.
 
 ## Error handling
 

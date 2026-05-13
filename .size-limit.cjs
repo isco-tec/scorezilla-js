@@ -39,4 +39,20 @@ module.exports = [
     gzip: true,
     brotli: false,
   },
+  {
+    name: 'ESM — `scorezilla/server` (HMAC adapter)',
+    path: 'dist/server.js',
+    import: '*',
+    limit: '6 KB',
+    gzip: true,
+    brotli: false,
+  },
+  {
+    name: 'CJS — `scorezilla/server` (HMAC adapter)',
+    path: 'dist/server.cjs',
+    import: '*',
+    limit: '6 KB',
+    gzip: true,
+    brotli: false,
+  },
 ];

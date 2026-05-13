@@ -45,9 +45,22 @@ export interface RequestOptions {
   method: HttpMethod;
   /** Request body to JSON-stringify. `undefined` → no body, no Content-Type. */
   body?: Record<string, unknown> | undefined;
-  /** Extra headers to merge on top of the SDK's defaults. The client layer
-   *  passes `Authorization` here. */
+  /** Extra headers to merge on top of the SDK's defaults. The public-key
+   *  client passes a static `Authorization: Bearer pk_*` here. Leave
+   *  `Authorization` unset when using `signRequest` — the per-attempt
+   *  hook owns that header. */
   headers?: Record<string, string> | undefined;
+  /** Per-attempt request-signing hook. Called fresh on every fetch attempt
+   *  (including each retry) with the canonicalized method, path-and-query,
+   *  and body, returning the `Authorization` header value.
+   *
+   *  This is what the HMAC server adapter uses: each attempt needs a fresh
+   *  timestamp + nonce, so a static header would burn replay-protection
+   *  budget. The public-key client doesn't pass this — it uses `headers`
+   *  with a static Bearer token instead. Mutually exclusive in practice. */
+  signRequest?:
+    | ((args: { method: HttpMethod; pathAndQuery: string; body: string }) => Promise<string>)
+    | undefined;
   /** Injectable fetch — defaults to `globalThis.fetch`. */
   fetchImpl?: FetchImpl | undefined;
   /** Caller-supplied AbortSignal — composed with the SDK's internal timeout signal. */
@@ -131,13 +144,31 @@ export async function request<T extends { ok: true }>(opts: RequestOptions): Pro
     // and timers on a long-lived caller signal. The current shape is
     // resilient to that class of edit.
     try {
+      // Serialize the body ONCE per attempt — both the fetch and the
+      // signRequest hook need identical bytes. Re-stringifying inside
+      // the signer would be a subtle correctness hazard if Date.now /
+      // any non-deterministic field ever crept into body construction.
+      const bodyString = opts.body !== undefined ? JSON.stringify(opts.body) : '';
+
+      // Headers + Authorization. The HMAC signer (if present) wins —
+      // per-attempt fresh signing is the contract for that auth mode.
+      // Path-and-query fed to the signer must match what the server
+      // will see (`/v1/...?...`), without the baseUrl origin prefix.
+      const perAttemptHeaders = { ...(opts.headers ?? {}) };
+      if (opts.signRequest) {
+        perAttemptHeaders.Authorization = await opts.signRequest({
+          method: opts.method,
+          pathAndQuery: opts.path,
+          body: bodyString,
+        });
+      }
       const init: RequestInit = {
         method: opts.method,
-        headers: buildHeaders(opts, idempotencyKey),
+        headers: buildHeaders({ ...opts, headers: perAttemptHeaders }, idempotencyKey),
         signal: combined.signal,
       };
       if (opts.body !== undefined) {
-        init.body = JSON.stringify(opts.body);
+        init.body = bodyString;
       }
       const response = await fetchImpl(url, init);
 

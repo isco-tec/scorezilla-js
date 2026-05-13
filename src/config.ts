@@ -104,37 +104,10 @@ export function validateConfig(cfg: ScorezillaConfig): ResolvedConfig {
 
   let auth: ResolvedConfig['auth'];
   if (hasPublic) {
-    const pk = (cfg as PublicKeyConfig).publicKey;
-    if (typeof pk !== 'string' || !PUBLIC_KEY_PATTERN.test(pk)) {
-      // Never echo any characters of the supplied key into the error
-      // message. If the developer paste-mistakes a `sk_live_*` secret
-      // here, the previous `pk.slice(0, 12)` would have leaked 12 chars
-      // of the secret into wherever this thrown Error lands (Sentry,
-      // Datadog, console). Report only the shape (`string` of len N,
-      // or `undefined`/`number`/etc.) so the mistake is debuggable
-      // without exposing the value.
-      const shape = typeof pk === 'string' ? `string of length ${pk.length}` : typeof pk;
-      throw new Error(
-        `scorezilla: publicKey must match ${PUBLIC_KEY_PATTERN.toString()} (got: ${shape})`,
-      );
-    }
-    auth = { kind: 'public', key: pk };
+    auth = { kind: 'public', key: validatePublicKeyValue((cfg as PublicKeyConfig).publicKey) };
   } else {
-    const sk = (cfg as SecretKeyConfig).secretKey;
-    if (
-      !sk ||
-      typeof sk !== 'object' ||
-      typeof sk.id !== 'string' ||
-      typeof sk.secret !== 'string'
-    ) {
-      throw new Error('scorezilla: secretKey must be an object with string `id` and `secret`');
-    }
-    if (!sk.secret.startsWith(SECRET_KEY_PREFIX)) {
-      throw new Error(
-        `scorezilla: secretKey.secret must start with "${SECRET_KEY_PREFIX}" (live keys only)`,
-      );
-    }
-    auth = { kind: 'secret', keyId: sk.id, secret: sk.secret };
+    const resolved = validateSecretKey(cfg as SecretKeyConfig);
+    auth = { kind: 'secret', keyId: resolved.keyId, secret: resolved.secret };
   }
 
   const baseUrlRaw = cfg.baseUrl ?? DEFAULT_BASE_URL;
@@ -150,4 +123,60 @@ export function validateConfig(cfg: ScorezillaConfig): ResolvedConfig {
     userAgent: cfg.userAgent,
     auth,
   };
+}
+
+/**
+ * Validate a `publicKey` string and return it. Throws a plain `Error` on
+ * misuse — caller bug, not an API failure.
+ *
+ * Never echo any characters of the supplied key in the error message —
+ * if a developer paste-mistakes a `sk_live_*` secret here, the previous
+ * `pk.slice(0, 12)` would have leaked 12 chars of the secret to whatever
+ * log aggregator catches the Error. Report only the shape.
+ */
+function validatePublicKeyValue(pk: unknown): string {
+  if (typeof pk !== 'string' || !PUBLIC_KEY_PATTERN.test(pk)) {
+    const shape = typeof pk === 'string' ? `string of length ${pk.length}` : typeof pk;
+    throw new Error(
+      `scorezilla: publicKey must match ${PUBLIC_KEY_PATTERN.toString()} (got: ${shape})`,
+    );
+  }
+  return pk;
+}
+
+/**
+ * Validate a {@link SecretKeyConfig} and return a normalized `{ keyId,
+ * secret }`. Used by both the public {@link validateConfig} (for the
+ * core SDK) and the server adapter's own constructor — separating the
+ * two-path validation out of `validateConfig` lets the server entry
+ * point import this without dragging the public-key branch into its
+ * bundle.
+ *
+ * Throws a plain `Error` on misuse. The error never echoes the secret
+ * itself — only the shape and prefix sanity, just like the public-key
+ * validator.
+ *
+ * @stability internal — exposed for `scorezilla/server`'s constructor
+ *                       and unit tests. Not part of the public API.
+ */
+export function validateSecretKey(cfg: SecretKeyConfig): { keyId: string; secret: string } {
+  if (!cfg || typeof cfg !== 'object') {
+    throw new Error('scorezilla/server: config must be an object with a secretKey field');
+  }
+  const sk = cfg.secretKey;
+  if (!sk || typeof sk !== 'object' || typeof sk.id !== 'string' || typeof sk.secret !== 'string') {
+    throw new Error('scorezilla/server: secretKey must be an object with string `id` and `secret`');
+  }
+  if (sk.id.length === 0) {
+    throw new Error('scorezilla/server: secretKey.id must be a non-empty string');
+  }
+  if (!sk.secret.startsWith(SECRET_KEY_PREFIX)) {
+    // Never echo the value. A typo'd publicKey paste lands here often;
+    // we report shape only.
+    const shape = `string of length ${sk.secret.length}`;
+    throw new Error(
+      `scorezilla/server: secretKey.secret must start with "${SECRET_KEY_PREFIX}" (live keys only) (got: ${shape})`,
+    );
+  }
+  return { keyId: sk.id, secret: sk.secret };
 }
