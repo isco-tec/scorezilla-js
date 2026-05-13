@@ -107,9 +107,15 @@ export function shouldRetryError(err: unknown): boolean {
 export function generateIdempotencyKey(): string {
   const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
   if (!c || typeof c.randomUUID !== 'function') {
-    throw new Error(
+    // Throw a `ScorezillaError`, not a plain `Error`. The documented catch
+    // pattern in README.md is `if (!(e instanceof ScorezillaError)) throw e;` —
+    // a plain `Error` here would escape that guard and bubble up as
+    // unhandled. `code: 'internal_error'` is the right category: this is
+    // a runtime misconfiguration, not an API failure.
+    throw new ScorezillaError(
       'scorezilla: globalThis.crypto.randomUUID is unavailable. ' +
         'The SDK requires Node ≥ 20 or a modern browser. Check your runtime.',
+      { status: 0, code: 'internal_error' },
     );
   }
   return c.randomUUID();

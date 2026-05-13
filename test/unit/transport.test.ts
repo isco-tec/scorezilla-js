@@ -504,7 +504,7 @@ describe('request — fetch availability', () => {
     delete globalThis.fetch;
     try {
       await expect(
-        request({
+        request<{ ok: true }>({
           baseUrl: 'https://api.example.com',
           path: '/v1/x',
           method: 'GET',
@@ -513,6 +513,181 @@ describe('request — fetch availability', () => {
       ).rejects.toThrow(/globalThis\.fetch is unavailable/);
     } finally {
       globalThis.fetch = original;
+    }
+  });
+});
+
+// ─── Regression tests for the v0.1.0-next.0 review (issue #14) ─────────────
+
+describe('request — per-attempt signal cleanup (regression)', () => {
+  it('removes every abort listener it adds, across multiple retries', async () => {
+    // The scenario: a caller passes a long-lived AbortSignal (e.g. tied to
+    // a page navigation). The transport adds an abort-listener on every
+    // retry attempt. Before the try/finally refactor, an early exit
+    // between the fetch and the catch could skip cleanup and leak a
+    // listener per attempt — undetectable in normal tests because the next
+    // attempt still produces the right behavior, but pathological under
+    // thousands of submissions on the same signal.
+    const callerCtrl = new AbortController();
+    let addCount = 0;
+    let removeCount = 0;
+    const origAdd = callerCtrl.signal.addEventListener.bind(callerCtrl.signal);
+    const origRemove = callerCtrl.signal.removeEventListener.bind(callerCtrl.signal);
+    callerCtrl.signal.addEventListener = ((
+      ...args: Parameters<typeof origAdd>
+    ): ReturnType<typeof origAdd> => {
+      if (args[0] === 'abort') addCount++;
+      return origAdd(...args);
+    }) as typeof origAdd;
+    callerCtrl.signal.removeEventListener = ((
+      ...args: Parameters<typeof origRemove>
+    ): ReturnType<typeof origRemove> => {
+      if (args[0] === 'abort') removeCount++;
+      return origRemove(...args);
+    }) as typeof origRemove;
+
+    // Persistent 503 — initial + 2 retries = 3 attempts.
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ ok: false, error: 'internal_error' }, { status: 503 }),
+    ) as unknown as FetchImpl;
+
+    await expect(
+      request<{ ok: true }>({
+        baseUrl: 'https://api.example.com',
+        path: '/v1/x',
+        method: 'GET',
+        fetchImpl,
+        signal: callerCtrl.signal,
+        retry: { sleepImpl: instantSleep, random: () => 0.5, maxRetries: 2 },
+      }),
+    ).rejects.toBeInstanceOf(ScorezillaError);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(addCount).toBeGreaterThan(0);
+    // Every `addEventListener('abort', …)` on the caller signal must have
+    // a matching `removeEventListener('abort', …)`. Off-by-one here would
+    // mean we're slowly leaking listeners on long-lived callers.
+    expect(removeCount).toBe(addCount);
+  });
+
+  it('cleans up the per-attempt signal on the success path', async () => {
+    const callerCtrl = new AbortController();
+    let addCount = 0;
+    let removeCount = 0;
+    const origAdd = callerCtrl.signal.addEventListener.bind(callerCtrl.signal);
+    const origRemove = callerCtrl.signal.removeEventListener.bind(callerCtrl.signal);
+    callerCtrl.signal.addEventListener = ((
+      ...args: Parameters<typeof origAdd>
+    ): ReturnType<typeof origAdd> => {
+      if (args[0] === 'abort') addCount++;
+      return origAdd(...args);
+    }) as typeof origAdd;
+    callerCtrl.signal.removeEventListener = ((
+      ...args: Parameters<typeof origRemove>
+    ): ReturnType<typeof origRemove> => {
+      if (args[0] === 'abort') removeCount++;
+      return origRemove(...args);
+    }) as typeof origRemove;
+
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ ok: true, value: 1 }),
+    ) as unknown as FetchImpl;
+
+    await request<{ ok: true; value: number }>({
+      baseUrl: 'https://api.example.com',
+      path: '/v1/x',
+      method: 'GET',
+      fetchImpl,
+      signal: callerCtrl.signal,
+      retry: { sleepImpl: instantSleep },
+    });
+
+    expect(removeCount).toBe(addCount);
+  });
+});
+
+describe('request — invalid_json on contract drift', () => {
+  it('throws invalid_json on a non-object 200 (e.g., literal 42)', async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response('42', {
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    ) as unknown as FetchImpl;
+    try {
+      await request<{ ok: true }>({
+        baseUrl: 'https://api.example.com',
+        path: '/v1/x',
+        method: 'GET',
+        fetchImpl,
+        retry: { sleepImpl: instantSleep, maxRetries: 0 },
+      });
+      throw new Error('should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(ScorezillaError);
+      const err = e as ScorezillaError;
+      expect(err.code).toBe('invalid_json');
+      expect(err.message).toMatch(/not a JSON object/);
+    }
+  });
+
+  it('throws invalid_json on a null 200', async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response('null', {
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    ) as unknown as FetchImpl;
+    try {
+      await request<{ ok: true }>({
+        baseUrl: 'https://api.example.com',
+        path: '/v1/x',
+        method: 'GET',
+        fetchImpl,
+        retry: { sleepImpl: instantSleep, maxRetries: 0 },
+      });
+      throw new Error('should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(ScorezillaError);
+      expect((e as ScorezillaError).code).toBe('invalid_json');
+    }
+  });
+
+  it('throws invalid_json when 2xx body is missing the `ok: true` discriminator', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ value: 42 })) as unknown as FetchImpl;
+    try {
+      await request<{ ok: true; value: number }>({
+        baseUrl: 'https://api.example.com',
+        path: '/v1/x',
+        method: 'GET',
+        fetchImpl,
+        retry: { sleepImpl: instantSleep, maxRetries: 0 },
+      });
+      throw new Error('should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(ScorezillaError);
+      const err = e as ScorezillaError;
+      expect(err.code).toBe('invalid_json');
+      expect(err.message).toMatch(/discriminator/);
+    }
+  });
+
+  it('throws invalid_json when 2xx body has ok: false (impossible-but-defensive)', async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ ok: false, error: 'something_wrong' }),
+    ) as unknown as FetchImpl;
+    try {
+      await request<{ ok: true }>({
+        baseUrl: 'https://api.example.com',
+        path: '/v1/x',
+        method: 'GET',
+        fetchImpl,
+        retry: { sleepImpl: instantSleep, maxRetries: 0 },
+      });
+      throw new Error('should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(ScorezillaError);
+      expect((e as ScorezillaError).code).toBe('invalid_json');
     }
   });
 });

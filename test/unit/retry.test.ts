@@ -178,3 +178,57 @@ describe('sleep', () => {
     expect(() => ctrl.abort()).not.toThrow();
   });
 });
+
+// ─── Regression tests for the v0.1.0-next.0 review (issue #14) ─────────────
+
+describe('generateIdempotencyKey — throws ScorezillaError on runtime misconfig', () => {
+  it('throws a typed ScorezillaError when globalThis.crypto.randomUUID is missing', () => {
+    // The documented catch pattern in README.md is
+    //   if (!(e instanceof ScorezillaError)) throw e;
+    // A plain `Error` here would escape that guard and bubble up as
+    // unhandled. This test pins the contract.
+    const original = globalThis.crypto;
+    Object.defineProperty(globalThis, 'crypto', {
+      value: undefined,
+      configurable: true,
+      writable: true,
+    });
+    try {
+      generateIdempotencyKey();
+      throw new Error('should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(ScorezillaError);
+      const err = e as ScorezillaError;
+      expect(err.code).toBe('internal_error');
+      expect(err.status).toBe(0);
+      expect(err.message).toMatch(/randomUUID is unavailable/);
+    } finally {
+      Object.defineProperty(globalThis, 'crypto', {
+        value: original,
+        configurable: true,
+        writable: true,
+      });
+    }
+  });
+
+  it('also throws ScorezillaError when crypto exists but randomUUID is not a function', () => {
+    const original = globalThis.crypto;
+    Object.defineProperty(globalThis, 'crypto', {
+      value: { randomUUID: 'not a function' },
+      configurable: true,
+      writable: true,
+    });
+    try {
+      generateIdempotencyKey();
+      throw new Error('should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(ScorezillaError);
+    } finally {
+      Object.defineProperty(globalThis, 'crypto', {
+        value: original,
+        configurable: true,
+        writable: true,
+      });
+    }
+  });
+});

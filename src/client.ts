@@ -336,7 +336,9 @@ export class Scorezilla {
    * and hands them to this thin pass-through. Keeps the four method bodies
    * boilerplate-free and ensures every call shares identical defaults.
    */
-  async #request<T>(opts: Pick<RequestOptions, 'path' | 'method' | 'body'>): Promise<T> {
+  async #request<T extends { ok: true }>(
+    opts: Pick<RequestOptions, 'path' | 'method' | 'body'>,
+  ): Promise<T> {
     const headers: Record<string, string> = {
       Authorization: this.#authHeader,
       // User-Agent: ignored by browsers (per Fetch spec), useful in

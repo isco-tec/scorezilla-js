@@ -76,9 +76,12 @@ export interface RequestOptions {
  *   • abort via caller's signal (`code: 'aborted'`)
  *   • response JSON parsing failure (`code: 'invalid_json'`)
  *
- * @typeParam T - the per-route success payload shape (e.g., `SubmitScoreResponse`).
+ * @typeParam T - the per-route success payload shape — always an
+ *                `ApiSuccess<X> = { ok: true } & X`. The constraint enforces
+ *                that `parseJson`'s discriminator check applies to every
+ *                call site at compile time, with no escape hatch.
  */
-export async function request<T>(opts: RequestOptions): Promise<T> {
+export async function request<T extends { ok: true }>(opts: RequestOptions): Promise<T> {
   const fetchImpl: FetchImpl = opts.fetchImpl ?? (globalThis.fetch as FetchImpl);
   if (typeof fetchImpl !== 'function') {
     throw new Error(
@@ -120,6 +123,13 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const combined = combineSignalsWithTimeout(opts.signal, timeoutMs);
 
+    // Cleanup is structural, not positional: a `try { … } finally { cleanup }`
+    // wrapper guarantees the per-attempt signal+timer is detached on EVERY
+    // exit path — return, throw, or `continue`. The earlier implementation
+    // called `cleanup()` at two positional points (after fetch, in catch);
+    // any future early-exit added between them would silently leak listeners
+    // and timers on a long-lived caller signal. The current shape is
+    // resilient to that class of edit.
     try {
       const init: RequestInit = {
         method: opts.method,
@@ -130,8 +140,6 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
         init.body = JSON.stringify(opts.body);
       }
       const response = await fetchImpl(url, init);
-
-      combined.cleanup();
 
       if (response.ok) {
         return await parseJson<T>(response);
@@ -155,8 +163,6 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
 
       throw err;
     } catch (caught: unknown) {
-      combined.cleanup();
-
       // ScorezillaError thrown by our own logic above (already typed) —
       // either retry or rethrow per the retry policy.
       if (caught instanceof ScorezillaError) {
@@ -169,7 +175,10 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
         throw caught;
       }
 
-      // Map raw fetch failures to ScorezillaError.
+      // Map raw fetch failures to ScorezillaError. `combined.timedOut()`
+      // remains queryable after cleanup — the boolean is captured in the
+      // closure regardless of timer state — so this works correctly even
+      // though the `finally` below has already run by the time we get here.
       const mapped = mapTransportError(caught, opts.signal, timeoutMs, combined);
       if (shouldRetryError(mapped) && attempt < maxRetries) {
         const delay = nextDelay(attempt, undefined, random);
@@ -178,6 +187,8 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
         continue;
       }
       throw mapped;
+    } finally {
+      combined.cleanup();
     }
   }
 
@@ -220,17 +231,66 @@ function buildHeaders(opts: RequestOptions, idempotencyKey: string | null): Reco
   return headers;
 }
 
-async function parseJson<T>(response: Response): Promise<T> {
+/**
+ * Parse a successful response body and assert it matches the success envelope.
+ *
+ * The `T extends { ok: true }` constraint reflects that every API success
+ * payload is shaped `ApiSuccess<X> = { ok: true } & X`. Asserting the
+ * discriminator at runtime catches a class of silent contract violations:
+ * a server-side regression that omits `ok` or returns a non-object on a
+ * 2xx would otherwise produce `undefined` on typed-as-required fields far
+ * from this fetch site, with no error message that pointed back here.
+ *
+ * Three distinct failure modes all map to `code: 'invalid_json'`:
+ *   1. JSON parse error (malformed body)
+ *   2. Non-object body (`null`, array, primitive)
+ *   3. Object missing `ok: true` discriminator
+ *
+ * `'invalid_json'` is documented as a transport-layer code in errors.ts
+ * and ScorezillaErrorCode; consumers can `if (e.code === 'invalid_json')`
+ * to detect API/SDK contract drift.
+ */
+async function parseJson<T extends { ok: true }>(response: Response): Promise<T> {
+  const requestId = response.headers.get('X-Request-Id') ?? undefined;
+
+  let parsed: unknown;
   try {
-    return (await response.json()) as T;
+    parsed = await response.json();
   } catch (cause) {
     throw new ScorezillaError('Response body was not valid JSON', {
       status: response.status,
       code: 'invalid_json',
-      requestId: response.headers.get('X-Request-Id') ?? undefined,
+      requestId,
       cause,
     });
   }
+
+  if (parsed === null || typeof parsed !== 'object') {
+    const observed = parsed === null ? 'null' : typeof parsed;
+    throw new ScorezillaError(`Response body was not a JSON object (got ${observed})`, {
+      status: response.status,
+      code: 'invalid_json',
+      requestId,
+    });
+  }
+
+  // The `ok: true` discriminator must be present on a successful response.
+  // If it isn't, the server has drifted from the API contract — surface
+  // that as a typed error rather than letting the consumer's code crash on
+  // `result.rank` being undefined three call frames away.
+  const okField = (parsed as { ok?: unknown }).ok;
+  if (okField !== true) {
+    throw new ScorezillaError(
+      `Response body on a 2xx is missing the \`ok: true\` discriminator (got ok=${String(okField)})`,
+      {
+        status: response.status,
+        code: 'invalid_json',
+        requestId,
+      },
+    );
+  }
+
+  return parsed as T;
 }
 
 async function safelyParseErrorBody(response: Response): Promise<ApiError | undefined> {

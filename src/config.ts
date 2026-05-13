@@ -106,8 +106,16 @@ export function validateConfig(cfg: ScorezillaConfig): ResolvedConfig {
   if (hasPublic) {
     const pk = (cfg as PublicKeyConfig).publicKey;
     if (typeof pk !== 'string' || !PUBLIC_KEY_PATTERN.test(pk)) {
+      // Never echo any characters of the supplied key into the error
+      // message. If the developer paste-mistakes a `sk_live_*` secret
+      // here, the previous `pk.slice(0, 12)` would have leaked 12 chars
+      // of the secret into wherever this thrown Error lands (Sentry,
+      // Datadog, console). Report only the shape (`string` of len N,
+      // or `undefined`/`number`/etc.) so the mistake is debuggable
+      // without exposing the value.
+      const shape = typeof pk === 'string' ? `string of length ${pk.length}` : typeof pk;
       throw new Error(
-        `scorezilla: publicKey must match ${PUBLIC_KEY_PATTERN.toString()} (got: ${typeof pk === 'string' ? pk.slice(0, 12) + '…' : typeof pk})`,
+        `scorezilla: publicKey must match ${PUBLIC_KEY_PATTERN.toString()} (got: ${shape})`,
       );
     }
     auth = { kind: 'public', key: pk };

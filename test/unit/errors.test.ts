@@ -291,3 +291,83 @@ describe('ScorezillaError — discriminator helpers', () => {
     expect(new ScorezillaError('', { status: 404, code: 'not_found' }).isTransient()).toBe(false);
   });
 });
+
+// ─── Regression tests for the v0.1.0-next.0 review (issue #14) ─────────────
+
+describe('ScorezillaError — server-supplied string fields are bounded', () => {
+  it('truncates an over-long `reason` field', () => {
+    const huge = 'X'.repeat(MESSAGE_MAX_CHARS + 200);
+    const e = new ScorezillaError('boom', {
+      status: 422,
+      code: 'out_of_bounds',
+      reason: huge,
+    });
+    expect(e.reason).toBeDefined();
+    expect((e.reason as string).length).toBe(MESSAGE_MAX_CHARS);
+    expect(e.reason).toMatch(new RegExp(TRUNCATION_SUFFIX.replace(/[.[\]]/g, '\\$&') + '$'));
+  });
+
+  it('truncates an over-long `requestId`', () => {
+    const huge = 'r'.repeat(MESSAGE_MAX_CHARS + 50);
+    const e = new ScorezillaError('boom', {
+      status: 500,
+      code: 'internal_error',
+      requestId: huge,
+    });
+    expect(e.requestId).toBeDefined();
+    expect((e.requestId as string).length).toBe(MESSAGE_MAX_CHARS);
+  });
+
+  it('truncates an over-long `layer`', () => {
+    const huge = 'L'.repeat(MESSAGE_MAX_CHARS + 1);
+    const e = new ScorezillaError('boom', {
+      status: 429,
+      code: 'rate_limited',
+      layer: huge,
+    });
+    expect((e.layer as string).length).toBe(MESSAGE_MAX_CHARS);
+  });
+
+  it('leaves short fields untouched', () => {
+    const e = new ScorezillaError('boom', {
+      status: 422,
+      code: 'out_of_bounds',
+      reason: 'below_min',
+      requestId: '01HXYZ123',
+      layer: 'public-key',
+    });
+    expect(e.reason).toBe('below_min');
+    expect(e.requestId).toBe('01HXYZ123');
+    expect(e.layer).toBe('public-key');
+  });
+
+  it('produces undefined (not "") for non-string field inputs', () => {
+    // Defensive: a misconfigured caller passing a non-string into these
+    // fields should result in `undefined`, not an empty string that would
+    // pollute downstream `if (e.reason)` checks.
+    const e = new ScorezillaError('boom', {
+      status: 500,
+      code: 'internal_error',
+      // @ts-expect-error — runtime defense path
+      reason: 42,
+      // @ts-expect-error — runtime defense path
+      layer: { not: 'a string' },
+    });
+    expect(e.reason).toBeUndefined();
+    expect(e.layer).toBeUndefined();
+  });
+});
+
+describe('ScorezillaError.from — preserves field truncation through the factory', () => {
+  it('truncates the body.reason coming back from a hostile server', () => {
+    const huge = 'R'.repeat(MESSAGE_MAX_CHARS + 100);
+    const body: ApiError = {
+      ok: false,
+      error: 'out_of_bounds',
+      reason: huge,
+      message: 'Score below board minimum',
+    };
+    const e = ScorezillaError.from({ status: 422, body });
+    expect((e.reason as string).length).toBe(MESSAGE_MAX_CHARS);
+  });
+});
