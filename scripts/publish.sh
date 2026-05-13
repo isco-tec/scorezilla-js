@@ -46,4 +46,24 @@ else
 fi
 
 echo "Publishing scorezilla@${VERSION} under npm dist-tag: ${TAG}"
-exec pnpm publish --no-git-checks --access=public --tag "$TAG" "${PROVENANCE_FLAG[@]}"
+
+# We DO NOT `exec` here. Two reasons:
+#   1. `changesets/action`'s publish-detection parses stdout. `npm publish`
+#      output matches its expected pattern; pnpm's does not. Using
+#      `npm publish` keeps SRI generation + release annotation + smoke
+#      test working without forking `changesets/action`.
+#   2. We need to write a sentinel to $GITHUB_OUTPUT after the publish
+#      completes so the workflow can gate post-publish steps on a signal
+#      we control end-to-end (independent of changesets/action's parsing).
+#
+# `NODE_AUTH_TOKEN` is already exported by setup-node + the action's
+# `env:` block, so npm picks up auth from ~/.npmrc.
+npm publish --access=public --tag "$TAG" "${PROVENANCE_FLAG[@]}"
+
+# Signal published name+version to the workflow. Quoted carefully to avoid
+# shell metacharacter trouble even though name/version are well-formed.
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+  printf 'published=true\n' >> "$GITHUB_OUTPUT"
+  printf 'published_name=%s\n' "$(node -p "require('./package.json').name")" >> "$GITHUB_OUTPUT"
+  printf 'published_version=%s\n' "$VERSION" >> "$GITHUB_OUTPUT"
+fi

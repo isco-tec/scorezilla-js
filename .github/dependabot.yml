@@ -1,0 +1,53 @@
+version: 2
+
+# Dependabot keeps two attack surfaces current:
+#   1. npm devDependencies — anything in the build/test toolchain that gets
+#      a published CVE.
+#   2. GitHub Actions — the action versions referenced in
+#      .github/workflows/*. Pinning to mutable tags (`@v4`) means a tag
+#      force-move to a malicious commit is invisible without Dependabot
+#      digest updates.
+#
+# Security updates (separate from these schedules) fire immediately on
+# advisory publication when `dependabot_security_updates` is enabled at
+# the repo level — verify in Settings → Code security.
+
+updates:
+  - package-ecosystem: npm
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Asia/Jerusalem
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    # Group patch + minor bumps into a single PR per week. Majors stay
+    # individual so they can be reviewed on their own merits.
+    groups:
+      dev-dependencies-non-major:
+        dependency-type: development
+        update-types:
+          - patch
+          - minor
+    ignore:
+      # Vitest 2.x is the floor (a future major bump is an intentional,
+      # coordinated change — Vitest 3 needs `extends: true` workspace
+      # migration). Re-enable when ready.
+      - dependency-name: vitest
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@vitest/*'
+        update-types: ['version-update:semver-major']
+
+  - package-ecosystem: github-actions
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Asia/Jerusalem
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions

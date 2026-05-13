@@ -97,6 +97,13 @@ jobs:
       - name: Bundle-size gate
         run: pnpm size
 
+      # ─── Last-minute supply-chain audit before handing control to the
+      # release step. Duplicates sdk-ci.yml's `supply-chain` job by design:
+      # a CVE published between PR merge and release push (or a devDep
+      # update in main between runs) won't have been caught by the PR gate.
+      - name: pnpm audit (production tree)
+        run: pnpm audit --prod --audit-level=high
+
       # ─── The actual release step.
       #
       # `version:` script runs when there ARE unmerged changesets — Changesets
@@ -123,9 +130,12 @@ jobs:
 
       # ─── SRI hash generation.
       #
-      # Only runs when changesets/action actually published.
-      # Produces a markdown block listing SHA-384 hashes of every published JS
-      # entry under dist/. Consumers paste these into `<script integrity="…">`.
+      # Gated on `scripts/publish.sh`'s own `$GITHUB_OUTPUT` signal rather
+      # than `steps.changesets.outputs.published`. The action parses npm's
+      # publish stdout for confirmation; pnpm's output doesn't match, and
+      # even with our switch to `npm publish` we want a publish-detection
+      # signal we own end-to-end so future tooling swaps don't break the
+      # post-publish chain silently.
       - name: Generate SRI block
         if: steps.changesets.outputs.published == 'true'
         id: sri
@@ -167,15 +177,22 @@ jobs:
         if: steps.changesets.outputs.published == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pass the action's output through the environment instead of
+          # ${{ }} interpolation. YAML interpolation substitutes the raw
+          # string into the script at parse time — if the output ever
+          # contained shell metacharacters (backtick, $(...), newlines)
+          # the runner would execute attacker-controlled code. Reading
+          # from $PUBLISHED_PACKAGES instead keeps the value in shell
+          # variable space where quoting works correctly. (CWE-77.)
+          PUBLISHED_PACKAGES: ${{ steps.changesets.outputs.publishedPackages }}
         run: |
           set -euo pipefail
-          packages='${{ steps.changesets.outputs.publishedPackages }}'
-          if [ -z "$packages" ] || [ "$packages" = "[]" ]; then
+          if [ -z "${PUBLISHED_PACKAGES:-}" ] || [ "$PUBLISHED_PACKAGES" = "[]" ]; then
             echo "No published packages reported by changesets/action — nothing to annotate."
             exit 0
           fi
           sri_block=$(cat /tmp/release-sri.md)
-          echo "$packages" | jq -c '.[]' | while read -r row; do
+          echo "$PUBLISHED_PACKAGES" | jq -c '.[]' | while read -r row; do
             name=$(echo "$row" | jq -r '.name')
             version=$(echo "$row" | jq -r '.version')
             tag="${name}@${version}"
@@ -189,10 +206,13 @@ jobs:
       # ─── Smoke-confirm the new tarball is installable.
       - name: Post-publish smoke test
         if: steps.changesets.outputs.published == 'true'
+        env:
+          # Same injection-defense reasoning as the previous step:
+          # pass the package list via env, not ${{ }} interpolation.
+          PUBLISHED_PACKAGES: ${{ steps.changesets.outputs.publishedPackages }}
         run: |
           set -euo pipefail
-          packages='${{ steps.changesets.outputs.publishedPackages }}'
-          echo "$packages" | jq -c '.[]' | while read -r row; do
+          echo "$PUBLISHED_PACKAGES" | jq -c '.[]' | while read -r row; do
             name=$(echo "$row" | jq -r '.name')
             version=$(echo "$row" | jq -r '.version')
             echo "Waiting for ${name}@${version} to appear on registry…"
@@ -211,7 +231,20 @@ jobs:
             cd "$tmp"
             npm init -y > /dev/null
             npm install "${name}@${version}" --no-audit --no-fund > /dev/null
-            node -e "const p = require('$name'); if (!p.Scorezilla) throw new Error('Scorezilla export missing'); if (!p.SDK_VERSION || p.SDK_VERSION !== '$version') throw new Error('SDK_VERSION mismatch: expected $version, got ' + p.SDK_VERSION);"
+            # Pass name + version as argv to a heredoc-launched node, so
+            # they never reach the JS source via shell substitution.
+            # Otherwise a metachar-containing package name (defended by
+            # the env-pass-through above but worth defense in depth) would
+            # be able to break out of the `-e` string into JS context.
+            EXPECT_NAME="$name" EXPECT_VERSION="$version" node --input-type=module -e "
+              const name = process.env.EXPECT_NAME;
+              const version = process.env.EXPECT_VERSION;
+              const p = await import(name);
+              if (!p.Scorezilla) throw new Error(name + ': Scorezilla export missing');
+              if (!p.SDK_VERSION || p.SDK_VERSION !== version) {
+                throw new Error(name + ': SDK_VERSION mismatch — expected ' + version + ', got ' + p.SDK_VERSION);
+              }
+            "
             echo "  → ${name}@${version} installs cleanly and exports the expected surface"
             cd - > /dev/null
             rm -rf "$tmp"
