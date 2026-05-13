@@ -44,20 +44,10 @@ bun add scorezilla
 
 ## Quickstart
 
-> **Preview note.** The hosted API at `https://api.scorezilla.dev` is being
-> stood up alongside the stable v0.1.0 cut. Until it's live, point the SDK
-> at your own running API instance via the `baseUrl` option (shown below).
-> When the hosted endpoint goes live, omitting `baseUrl` will pick up the
-> default and the example becomes copy-paste-runnable.
-
 ```ts
 import { Scorezilla, ScorezillaError } from 'scorezilla';
 
-const sz = new Scorezilla({
-  publicKey: 'pk_mygame_aBcDeF…',
-  // Remove once https://api.scorezilla.dev is live.
-  baseUrl: 'https://your-api.example.com',
-});
+const sz = new Scorezilla({ publicKey: 'pk_mygame_aBcDeF…' });
 
 try {
   const r = await sz.submitScore({
