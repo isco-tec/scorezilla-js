@@ -1,0 +1,55 @@
+name: Dependabot auto-merge
+
+# Auto-merges Dependabot PRs that ONLY bump patch or minor versions, after
+# all required status checks pass. Major bumps stay manual — they're the
+# ones likely to have breaking changes.
+#
+# Security notes:
+# - `pull_request_target` runs in the context of the BASE branch (main),
+#   not the PR head, so a malicious dependency-bump PR cannot influence
+#   this workflow's code. We deliberately do NOT `actions/checkout` the
+#   PR head, and we only call `gh` against PR metadata.
+# - The `if: github.actor == 'dependabot[bot]'` guard means non-Dependabot
+#   PRs cannot trigger this workflow even if someone names their branch
+#   to mimic Dependabot's naming.
+# - We use the built-in `GITHUB_TOKEN` (no PAT). It cannot bypass branch
+#   protection — required status checks must still pass before the
+#   auto-merge actually fires.
+
+on: pull_request_target
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    steps:
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable auto-merge for patch + minor updates
+        if: steps.meta.outputs.update-type == 'version-update:semver-patch' || steps.meta.outputs.update-type == 'version-update:semver-minor'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          set -euo pipefail
+          # `gh pr merge --auto` queues the merge; GitHub fires it once
+          # required status checks pass. If checks fail, the PR stays open.
+          # `--squash` produces a single tidy commit on main.
+          # `--delete-branch` cleans up after — repo setting also has this
+          # on, so this is defense-in-depth.
+          gh pr merge --auto --squash --delete-branch "$PR_URL"
+          echo "Queued auto-merge for ${{ steps.meta.outputs.dependency-names }} (${{ steps.meta.outputs.update-type }})"
+
+      - name: Major updates require manual review
+        if: steps.meta.outputs.update-type == 'version-update:semver-major'
+        run: |
+          echo "Major update detected: ${{ steps.meta.outputs.dependency-names }}"
+          echo "Auto-merge intentionally NOT enabled. A human needs to review breaking-change notes."
