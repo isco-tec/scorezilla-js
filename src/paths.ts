@@ -38,6 +38,15 @@ export function submitScorePath(boardId: string): string {
   return `/v1/boards/${encodeSegment(boardId, 'boardId')}/scores`;
 }
 
+/** `POST /v1/secure/scores` — the HMAC-signed submission endpoint used by
+ *  the `scorezilla/server` adapter. The boardId moves into the request
+ *  body rather than the path: every submission here signs over the body
+ *  hash, so the API resolves the board from the body and authorizes via
+ *  the verified keyId in the Authorization header. */
+export function submitScoreSecurePath(): string {
+  return '/v1/secure/scores';
+}
+
 /** Options for {@link getLeaderboardPath}. */
 export interface LeaderboardQuery {
   /** Number of entries to return (the API caps at 1000). Defaults server-side to 100. */
