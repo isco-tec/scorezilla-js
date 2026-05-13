@@ -153,7 +153,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: pnpm audit (production tree)
-        run: pnpm audit --prod || true
+        # No `|| true` — a HIGH+ CVE in the prod tree should block CI rather
+        # than ride green into a release. Use the audit-ignore mechanism in
+        # pnpm if a specific advisory needs documented triage.
+        run: pnpm audit --prod --audit-level=high
       - name: npm audit signatures
         run: npm audit signatures
       - name: Re-install with --ignore-scripts (catches postinstall malware)

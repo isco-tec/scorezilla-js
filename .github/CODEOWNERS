@@ -1,0 +1,29 @@
+# CODEOWNERS for scorezilla-js
+#
+# Required reviewers for the listed paths. Combined with branch protection
+# (Settings → Branches → main → Require review from Code Owners), every PR
+# touching these paths needs an explicit approval from a listed owner before
+# merge — closing the "I'll just merge my own PR" gap that exists for
+# repository admins.
+
+# Default — everything not otherwise matched.
+*                                @isco-tec
+
+# Critical: anything that affects what reaches the npm registry or how the
+# release pipeline runs. PRs touching these paths warrant extra scrutiny
+# regardless of who opened them.
+.github/workflows/                @isco-tec
+scripts/publish.sh                @isco-tec
+package.json                      @isco-tec
+.changeset/                       @isco-tec
+
+# SDK public surface — API changes are user-visible and hard to undo.
+src/index.ts                      @isco-tec
+src/client.ts                     @isco-tec
+src/errors.ts                     @isco-tec
+src/config.ts                     @isco-tec
+
+# Security posture / governance.
+SECURITY.md                       @isco-tec
+.github/dependabot.yml            @isco-tec
+.github/CODEOWNERS                @isco-tec
