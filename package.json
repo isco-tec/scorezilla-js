@@ -131,7 +131,7 @@
     "@eslint/js": "^9.15.0",
     "@size-limit/preset-small-lib": "^11.1.6",
     "@vitest/coverage-v8": "~2.1.0",
-    "eslint": "^9.15.0",
+    "eslint": "^10.3.0",
     "globals": "^17.6.0",
     "jsdom": "^25.0.1",
     "prettier": "^3.4.2",
