@@ -22,8 +22,15 @@ Instead, use one of these private channels — both reach the same triage queue:
 1. **GitHub private vulnerability reporting** (preferred):
    <https://github.com/isco-tec/scorezilla-js/security/advisories/new>
 
-2. **Email:** `security@scorezilla.dev` — encrypted with our PGP key on
-   request.
+   This is the best channel: it gives us a structured place to discuss the
+   issue privately, develop a fix together if you'd like, and coordinate
+   disclosure timing. It also handles CVE assignment for us.
+
+2. **Email:** [`security@scorezilla.dev`](mailto:security@scorezilla.dev).
+   Use this if you prefer email or can't access GitHub. Plain-text is fine —
+   we don't currently maintain a PGP key. If your report is sensitive enough
+   to need encryption, ask us in the first message and we'll arrange a
+   channel.
 
 ### What to include
 
@@ -35,12 +42,26 @@ Instead, use one of these private channels — both reach the same triage queue:
 
 ### What to expect
 
-- **Acknowledgement** of receipt within **72 hours**.
-- **Initial assessment** with a severity classification within **7 days**.
-- **Fix and coordinated disclosure** within **30 days** for HIGH/CRITICAL
-  severity; longer for lower-severity issues, communicated case-by-case.
-- A **CVE assignment** for any vulnerability rated MEDIUM or higher,
-  requested via GitHub's CVE numbering authority (CNA) workflow.
+These are the target windows we commit to publicly. In practice we aim to
+move faster, but these are the deadlines we won't silently miss.
+
+- **Acknowledgement** of receipt within **7 days** — usually within 48
+  hours, but we won't promise faster than 7 days because off-hours,
+  weekends, and travel happen and silent-miss is worse than honest-target.
+- **Initial assessment** with a severity classification within **21 days**.
+- **Fix and coordinated disclosure** target windows:
+  - **CRITICAL / HIGH**: 90 days — the industry-standard coordinated
+    disclosure window used by Google Project Zero and most major CNAs.
+  - **MEDIUM**: 180 days.
+  - **LOW**: best-effort; usually folded into the next planned release.
+- A **CVE assignment** is requested for any vulnerability rated MEDIUM or
+  higher, via GitHub's CVE Numbering Authority (CNA) workflow.
+
+If the published windows are insufficient for a specific report (e.g.,
+active exploitation in the wild), the reporter and the maintainers will
+coordinate an accelerated timeline. Conversely, if our investigation
+requires more time than the stated window, we will communicate that
+proactively — silently missing an SLA is never the right answer.
 
 We will credit you in the security advisory unless you prefer to remain
 anonymous.
