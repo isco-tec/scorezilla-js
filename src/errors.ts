@@ -39,6 +39,23 @@ function truncateMessage(raw: unknown): string {
 }
 
 /**
+ * Truncate a server-supplied string field that lives on `ScorezillaError`
+ * but isn't `message`. Returns `undefined` for non-strings so the field
+ * type stays `string | undefined` rather than being coerced to `''`.
+ *
+ * Defense-in-depth: even though current API contracts treat these as small
+ * identifiers/classifiers, the SDK shouldn't trust the server to keep them
+ * bounded — a regression that echoes back caller-controlled input would
+ * otherwise land unbounded strings in the thrown error object.
+ */
+function truncateField(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  if (raw.length <= MESSAGE_MAX_CHARS) return raw;
+  const sliceEnd = Math.max(0, MESSAGE_MAX_CHARS - TRUNCATION_SUFFIX.length);
+  return raw.slice(0, sliceEnd) + TRUNCATION_SUFFIX;
+}
+
+/**
  * Options for {@link ScorezillaError.from}.
  *
  * The fields mirror what's available after a fetch round-trip: the HTTP
@@ -136,11 +153,17 @@ export class ScorezillaError extends Error {
     this.name = 'ScorezillaError';
     this.status = init.status;
     this.code = init.code;
-    this.reason = init.reason;
+    // String fields from the server side are length-capped. The cap is
+    // generous — `MESSAGE_MAX_CHARS` is well above any legitimate
+    // identifier or classifier — but defends against a future server
+    // regression that echoes back caller-controlled input into these
+    // fields. `requestId` typically a UUID; `reason`/`layer` typically a
+    // short enum-like string; all three should sit far under the cap.
+    this.reason = truncateField(init.reason);
     this.retryAfter = init.retryAfter;
-    this.requestId = init.requestId;
+    this.requestId = truncateField(init.requestId);
     this.bound = init.bound;
-    this.layer = init.layer;
+    this.layer = truncateField(init.layer);
     this.cause = init.cause;
 
     // Cross-realm instanceof: explicitly set the prototype. Without this,

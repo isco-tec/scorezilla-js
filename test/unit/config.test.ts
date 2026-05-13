@@ -158,3 +158,39 @@ describe('constants', () => {
     expect(DEFAULT_BASE_URL).not.toMatch(/workers\.dev/);
   });
 });
+
+// ─── Regression tests for the v0.1.0-next.0 review (issue #14) ─────────────
+
+describe('validateConfig — never echoes key characters in errors', () => {
+  it('redacts every character of the supplied key in the error message', () => {
+    // Worst-case scenario: developer paste-mistakes a secret key into the
+    // publicKey slot. The previous code echoed `pk.slice(0, 12)` which would
+    // have leaked 12 characters of a real `sk_live_*` secret to whatever log
+    // aggregator catches the thrown Error.
+    const accidentalSecret = 'sk_live_supersensitiveXYZ_donotleakIVE';
+    expect(() => validateConfig({ publicKey: accidentalSecret })).toThrow();
+    try {
+      validateConfig({ publicKey: accidentalSecret });
+    } catch (e) {
+      const msg = (e as Error).message;
+      // The redaction is strict: no 6-char substring of the actual secret
+      // payload (the bits after `sk_live_`) may appear in the error message.
+      // 6 chars is comfortably above coincidental matches with the public
+      // regex literal that's part of the error.
+      const secretPayload = accidentalSecret.slice('sk_live_'.length);
+      for (let i = 0; i + 6 <= secretPayload.length; i++) {
+        const slice = secretPayload.slice(i, i + 6);
+        expect(msg).not.toContain(slice);
+      }
+      // The error should still be useful — it tells you the type and length.
+      expect(msg).toMatch(/string of length/);
+    }
+  });
+
+  it('reports the typeof for non-string supplied keys', () => {
+    // @ts-expect-error — intentional misuse to test the runtime path
+    expect(() => validateConfig({ publicKey: 12345 })).toThrow(/got: number/);
+    // @ts-expect-error — intentional misuse to test the runtime path
+    expect(() => validateConfig({ publicKey: { not: 'a string' } })).toThrow(/got: object/);
+  });
+});
