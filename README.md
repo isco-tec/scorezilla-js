@@ -88,11 +88,11 @@ submission server-side with a `sk_live_*` secret:
 ```ts
 import { Scorezilla, ScorezillaError } from 'scorezilla/server';
 
+// Single self-contained token from the dashboard. Format:
+//   sk_live_<keyId>_<random>
+// The SDK parses the keyId out internally; you only manage one value.
 const sz = new Scorezilla({
-  secretKey: {
-    id: process.env.SCOREZILLA_KEY_ID!,
-    secret: process.env.SCOREZILLA_KEY_SECRET!, // never ship to a browser
-  },
+  secretKey: process.env.SCOREZILLA_SECRET_KEY!, // never ship to a browser
 });
 
 await sz.submitScore({ boardId, playerId, score, metadata });

@@ -47,10 +47,7 @@ describe('Scorezilla — construction', () => {
     expect(
       () =>
         new Scorezilla({
-          secretKey: {
-            id: 'sk-id-abc',
-            secret: 'sk_live_abcdefGHIJKLmnopQRSTuv',
-          },
+          secretKey: 'sk_live_9493330f-a9e6-4bd6-914f-100f1e51ac36_abc',
         }),
     ).toThrow(/v0\.2\.0.*scorezilla\/server/i);
   });
