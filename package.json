@@ -47,7 +47,10 @@
       }
     },
     "./server": {
-      "browser": "./dist/server-browser-stub.js",
+      "browser": {
+        "types": "./dist/server-browser-stub.d.ts",
+        "default": "./dist/server-browser-stub.js"
+      },
       "import": {
         "types": "./dist/server.d.ts",
         "default": "./dist/server.js"

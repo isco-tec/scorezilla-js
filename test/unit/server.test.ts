@@ -66,6 +66,80 @@ describe('Scorezilla server — constructor validation', () => {
     expect(typeof Scorezilla.version).toBe('string');
     expect(Scorezilla.version.length).toBeGreaterThan(0);
   });
+
+  it('refuses to instantiate in a real-browser environment (bundler misconfig safety net)', () => {
+    // The guard's detection requires BOTH browser globals (window +
+    // document) AND no Node-host signal. To simulate a real browser
+    // we need both halves: set window+document (in case the test
+    // runner doesn't have them — e.g., Bun) AND clear host globals.
+    //
+    // Some runtimes make their identity globals non-configurable
+    // (Bun's `globalThis.Bun` is one). We use `Reflect.defineProperty`
+    // with try/catch so the test stays robust — if any signal can't be
+    // cleared, we skip the assert (the guard correctly doesn't fire in
+    // that case and the test would otherwise produce a misleading
+    // failure).
+    const g = globalThis as Record<string, unknown>;
+    const browserGlobals = ['window', 'document'] as const;
+    const hostGlobals = ['process', 'Deno', 'Bun', 'EdgeRuntime'] as const;
+    const originals: Record<string, unknown> = {};
+    let allHostsCleared = true;
+    for (const k of hostGlobals) {
+      originals[k] = g[k];
+      try {
+        Reflect.defineProperty(g, k, { value: undefined, configurable: true, writable: true });
+      } catch {
+        // defineProperty threw — non-configurable.
+      }
+      // Read back: some runtimes (Bun) silently ignore the change.
+      if (g[k] !== undefined) allHostsCleared = false;
+    }
+    let allBrowsersSet = true;
+    for (const k of browserGlobals) {
+      originals[k] = g[k];
+      try {
+        Reflect.defineProperty(g, k, { value: {}, configurable: true, writable: true });
+      } catch {
+        // ignore
+      }
+      if (g[k] === undefined) allBrowsersSet = false;
+    }
+    try {
+      if (allHostsCleared && allBrowsersSet) {
+        // True simulation of a real browser: assert the guard throws.
+        expect(() => new Scorezilla(VALID_CONFIG)).toThrow(
+          /scorezilla\/server: this adapter is server-only/,
+        );
+      } else {
+        // Couldn't fully simulate — at minimum verify the detection
+        // isn't over-eager under the present (host-recognizable) env.
+        expect(() => new Scorezilla(VALID_CONFIG)).not.toThrow();
+      }
+    } finally {
+      for (const k of [...hostGlobals, ...browserGlobals]) {
+        try {
+          if (originals[k] === undefined && !(k in originals)) {
+            Reflect.deleteProperty(g, k);
+          } else {
+            Reflect.defineProperty(g, k, {
+              value: originals[k],
+              configurable: true,
+              writable: true,
+            });
+          }
+        } catch {
+          /* defensive — read-only host globals stay as they were */
+        }
+      }
+    }
+  });
+
+  it('does NOT throw under jsdom (vitest test environment) — process.versions.node is present', () => {
+    // Sanity that the guard distinguishes test-time jsdom from a real
+    // browser. The base test config has window+document (jsdom) AND
+    // process.versions.node (real Node host) — guard must allow this.
+    expect(() => new Scorezilla(VALID_CONFIG)).not.toThrow();
+  });
 });
 
 describe('Scorezilla server — submitScore signs the request', () => {
