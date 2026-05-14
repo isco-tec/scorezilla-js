@@ -68,53 +68,64 @@ describe('Scorezilla server — constructor validation', () => {
   });
 
   it('refuses to instantiate in a real-browser environment (bundler misconfig safety net)', () => {
-    // The test runs under vitest with jsdom — so window+document are already
-    // set, but `process.versions.node` is also present (we're really in Node),
-    // which means the guard correctly does NOT fire. To simulate the dangerous
-    // case (a real browser receiving server.ts because a Webpack 4 config
-    // didn't honor the `browser` export condition), we temporarily clear the
-    // Node-host signals. The guard MUST throw in this configuration.
+    // The guard's detection requires BOTH browser globals (window +
+    // document) AND no Node-host signal. To simulate a real browser
+    // we need both halves: set window+document (in case the test
+    // runner doesn't have them — e.g., Bun) AND clear host globals.
     //
-    // Some runtimes (Bun, Deno) make their identity globals read-only. We
-    // use `Reflect.defineProperty` with try/catch so the test stays robust
-    // across runtimes — if a host global can't be cleared, we skip clearing
-    // it; the guard correctly does NOT fire in that case because we're
-    // actually running under that host, and the test isn't expecting it to.
+    // Some runtimes make their identity globals non-configurable
+    // (Bun's `globalThis.Bun` is one). We use `Reflect.defineProperty`
+    // with try/catch so the test stays robust — if any signal can't be
+    // cleared, we skip the assert (the guard correctly doesn't fire in
+    // that case and the test would otherwise produce a misleading
+    // failure).
     const g = globalThis as Record<string, unknown>;
+    const browserGlobals = ['window', 'document'] as const;
     const hostGlobals = ['process', 'Deno', 'Bun', 'EdgeRuntime'] as const;
     const originals: Record<string, unknown> = {};
-    const cleared: string[] = [];
+    let allHostsCleared = true;
     for (const k of hostGlobals) {
       originals[k] = g[k];
       try {
         Reflect.defineProperty(g, k, { value: undefined, configurable: true, writable: true });
-        cleared.push(k);
       } catch {
-        // Some runtimes (Bun) make their own identity global non-configurable.
-        // If we can't clear it, the test runs WITH that host present — the
-        // guard correctly recognizes the host and doesn't throw. Either way,
-        // the assertion below is conditional on having cleared every signal.
+        allHostsCleared = false;
+      }
+    }
+    let allBrowsersSet = true;
+    for (const k of browserGlobals) {
+      originals[k] = g[k];
+      try {
+        Reflect.defineProperty(g, k, { value: {}, configurable: true, writable: true });
+      } catch {
+        allBrowsersSet = false;
       }
     }
     try {
-      // If we couldn't clear every signal, at least one host is still
-      // detectable and the guard will NOT throw. Only assert the throw
-      // when we successfully simulated a no-host environment.
-      if (cleared.length === hostGlobals.length) {
+      if (allHostsCleared && allBrowsersSet) {
+        // True simulation of a real browser: assert the guard throws.
         expect(() => new Scorezilla(VALID_CONFIG)).toThrow(
           /scorezilla\/server: this adapter is server-only/,
         );
       } else {
-        // Test still has value: confirm the guard doesn't throw under the
-        // present host's identity (i.e., the detection isn't over-eager).
+        // Couldn't fully simulate — at minimum verify the detection
+        // isn't over-eager under the present (host-recognizable) env.
         expect(() => new Scorezilla(VALID_CONFIG)).not.toThrow();
       }
     } finally {
-      for (const k of hostGlobals) {
+      for (const k of [...hostGlobals, ...browserGlobals]) {
         try {
-          Reflect.defineProperty(g, k, { value: originals[k], configurable: true, writable: true });
+          if (originals[k] === undefined && !(k in originals)) {
+            Reflect.deleteProperty(g, k);
+          } else {
+            Reflect.defineProperty(g, k, {
+              value: originals[k],
+              configurable: true,
+              writable: true,
+            });
+          }
         } catch {
-          /* same restriction; nothing to do */
+          /* defensive — read-only host globals stay as they were */
         }
       }
     }
