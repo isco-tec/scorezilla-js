@@ -66,6 +66,46 @@ describe('Scorezilla server — constructor validation', () => {
     expect(typeof Scorezilla.version).toBe('string');
     expect(Scorezilla.version.length).toBeGreaterThan(0);
   });
+
+  it('refuses to instantiate in a real-browser environment (bundler misconfig safety net)', () => {
+    // The test runs under vitest with jsdom — so window+document are already
+    // set, but `process.versions.node` is also present (we're really in Node),
+    // which means the guard correctly does NOT fire. To simulate the dangerous
+    // case (a real browser receiving server.ts because a Webpack 4 config
+    // didn't honor the `browser` export condition), we temporarily clear the
+    // Node-host signals. The guard MUST throw in this configuration.
+    const g = globalThis as {
+      Deno?: unknown;
+      Bun?: unknown;
+      EdgeRuntime?: unknown;
+      process?: unknown;
+    };
+    const origProcess = g.process;
+    const origDeno = g.Deno;
+    const origBun = g.Bun;
+    const origEdge = g.EdgeRuntime;
+    g.process = undefined;
+    g.Deno = undefined;
+    g.Bun = undefined;
+    g.EdgeRuntime = undefined;
+    try {
+      expect(() => new Scorezilla(VALID_CONFIG)).toThrow(
+        /scorezilla\/server: this adapter is server-only/,
+      );
+    } finally {
+      g.process = origProcess;
+      g.Deno = origDeno;
+      g.Bun = origBun;
+      g.EdgeRuntime = origEdge;
+    }
+  });
+
+  it('does NOT throw under jsdom (vitest test environment) — process.versions.node is present', () => {
+    // Sanity that the guard distinguishes test-time jsdom from a real
+    // browser. The base test config has window+document (jsdom) AND
+    // process.versions.node (real Node host) — guard must allow this.
+    expect(() => new Scorezilla(VALID_CONFIG)).not.toThrow();
+  });
 });
 
 describe('Scorezilla server — submitScore signs the request', () => {

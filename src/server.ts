@@ -157,6 +157,31 @@ export class Scorezilla {
   readonly #userAgent: string;
 
   constructor(config: SecretKeyConfig) {
+    // Belt-and-suspenders browser guard. The package's exports map routes
+    // `scorezilla/server` to `server-browser-stub.ts` when the bundler
+    // honors the `browser` condition — which closes the issue cleanly for
+    // modern bundlers (Vite, esbuild, Rollup, Webpack 5 with the right
+    // resolve config). But misconfigured older bundlers (Webpack 4 without
+    // `resolve.conditionNames`, certain custom Rollup setups) may bundle
+    // this file directly into a browser bundle. The secret would leak.
+    // Throwing at construction time is a non-negotiable runtime fence
+    // against that misconfiguration.
+    //
+    // Detection has to distinguish a *real browser* from *Node-with-jsdom*
+    // (the latter is what vitest's `environment: 'jsdom'` produces — it
+    // sets `window` + `document` but is fundamentally a Node process).
+    // Strategy: if we have a Node-like host (Node, Bun, Deno, or a
+    // Workers runtime with `nodejs_compat`), the secret is safe; otherwise
+    // if we see browser globals, refuse to instantiate.
+    if (isRealBrowserEnvironment()) {
+      throw new Error(
+        'scorezilla/server: this adapter is server-only and must not run in browsers. ' +
+          'Your bundler is shipping `scorezilla/server` into a browser bundle — check that it ' +
+          'honors the `browser` export condition in package.json. Use the public-key client ' +
+          "(`import { Scorezilla } from 'scorezilla'`) from browser code.",
+      );
+    }
+
     const resolved = validateSecretKey(config);
     this.#keyId = resolved.keyId;
     this.#secret = resolved.secret;
@@ -170,6 +195,15 @@ export class Scorezilla {
   /**
    * Submit a score to a board. Signed end-to-end — the API verifies
    * before any state change.
+   *
+   * **Behavioral note vs. the public-key client**: the server adapter
+   * does NOT perform local `metadata` validation. The public-key
+   * client (`scorezilla`) validates size + structure client-side and
+   * fails fast; the server adapter relies on the API to reject
+   * malformed metadata with `invalid_input`. Trade-off: smaller bundle
+   * + simpler server-side logic vs. one extra network round-trip on
+   * caller mistakes. If you want fast-fail behavior, validate metadata
+   * yourself before calling this method.
    */
   async submitScore(input: SubmitScoreInput): Promise<ApiSuccess<SubmitScoreResponse>> {
     return this.#request<ApiSuccess<SubmitScoreResponse>>({
@@ -253,6 +287,39 @@ export class Scorezilla {
 
     return request<T>(requestOpts);
   }
+}
+
+/**
+ * Distinguish a real browser from a Node-with-jsdom test environment.
+ *
+ * Browser globals (`window`, `document`) appear in both contexts. The
+ * differentiator is the presence of a recognizable server runtime:
+ *   - Node + Bun:         `process.versions.node`
+ *   - Cloudflare Workers
+ *     w/ nodejs_compat:   `process.versions.node` too
+ *   - Deno:               `globalThis.Deno`
+ *   - Vercel Edge:        `globalThis.EdgeRuntime`
+ *
+ * If ANY of these is present we're not in a real browser, and we trust
+ * the caller. Otherwise, if browser globals exist, refuse.
+ */
+function isRealBrowserEnvironment(): boolean {
+  const g = globalThis as {
+    window?: unknown;
+    document?: unknown;
+    Deno?: unknown;
+    Bun?: unknown;
+    EdgeRuntime?: unknown;
+    process?: { versions?: { node?: string } };
+  };
+  const hasBrowserGlobals = typeof g.window !== 'undefined' && typeof g.document !== 'undefined';
+  if (!hasBrowserGlobals) return false;
+  const hasNodeLikeHost =
+    Boolean(g.process?.versions?.node) ||
+    typeof g.Deno !== 'undefined' ||
+    typeof g.Bun !== 'undefined' ||
+    typeof g.EdgeRuntime !== 'undefined';
+  return !hasNodeLikeHost;
 }
 
 // Mirror the public-key client's pattern: re-export error + response
