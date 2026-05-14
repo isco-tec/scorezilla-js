@@ -358,8 +358,14 @@ export class Scorezilla {
     if (opts.body !== undefined) requestOpts.body = opts.body;
     if (this.#config.fetch !== undefined) requestOpts.fetchImpl = this.#config.fetch;
     if (this.#config.timeoutMs !== undefined) requestOpts.timeoutMs = this.#config.timeoutMs;
-    if (this.#config.maxRetries !== undefined) {
-      requestOpts.retry = { maxRetries: this.#config.maxRetries };
+    // Build the `retry` block only if at least one knob is set. Two
+    // distinct config options (`maxRetries`, `sleepImpl`) collapse into
+    // the single `retry: { ... }` shape transport expects.
+    if (this.#config.maxRetries !== undefined || this.#config.sleepImpl !== undefined) {
+      requestOpts.retry = {
+        ...(this.#config.maxRetries !== undefined ? { maxRetries: this.#config.maxRetries } : {}),
+        ...(this.#config.sleepImpl !== undefined ? { sleepImpl: this.#config.sleepImpl } : {}),
+      };
     }
 
     return request<T>(requestOpts);
