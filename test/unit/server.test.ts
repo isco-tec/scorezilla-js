@@ -22,8 +22,11 @@ function jsonResponse(body: unknown, init?: ResponseInit): Response {
   });
 }
 
+// Single-token format: `sk_live_<keyId>_<random>`. The keyId here is a
+// valid UUID v4 shape; the random suffix is base62.
+const VALID_KEY_ID = '9493330f-a9e6-4bd6-914f-100f1e51ac36';
 const VALID_CONFIG = {
-  secretKey: { id: 'sk-id-abc', secret: 'sk_live_test_secret_value' },
+  secretKey: `sk_live_${VALID_KEY_ID}_TestSecretValueAaBbCcDdEeFf`,
 } as const;
 
 describe('Scorezilla server — constructor validation', () => {
@@ -32,29 +35,37 @@ describe('Scorezilla server — constructor validation', () => {
     expect(() => new Scorezilla({})).toThrow(/secretKey/);
   });
 
-  it('throws when secretKey.secret does not start with sk_live_', () => {
-    expect(() => new Scorezilla({ secretKey: { id: 'k', secret: 'sk_test_abc' } })).toThrow(
-      /sk_live_/,
+  it('throws when secretKey is the legacy { id, secret } object form', () => {
+    expect(
+      () =>
+        // @ts-expect-error — legacy shape no longer accepted
+        new Scorezilla({ secretKey: { id: 'k', secret: 'sk_live_abc' } }),
+    ).toThrow(/single string/);
+  });
+
+  it('throws when secretKey lacks the embedded keyId (pre-next.2 single-string format)', () => {
+    expect(() => new Scorezilla({ secretKey: 'sk_live_NoKeyIdInThisString' })).toThrow(
+      /must match/,
     );
   });
 
-  it('throws on empty keyId', () => {
-    expect(() => new Scorezilla({ secretKey: { id: '', secret: 'sk_live_xyz' } })).toThrow(
-      /id must be a non-empty string/,
+  it('throws when secretKey has the wrong prefix', () => {
+    expect(() => new Scorezilla({ secretKey: `sk_test_${VALID_KEY_ID}_RandomSuffix` })).toThrow(
+      /must match/,
     );
   });
 
   it('never echoes any characters of the secret in the thrown error', () => {
     // Random-looking payload with no overlap against the error template
-    // text (which legitimately contains words like "secretKey" and "key").
-    const secret = 'sk_test_X7Qp3Z9aB2vR8sW1MnK0LjUyEdHfGiTcDbN';
+    // text (which legitimately contains words like "secretKey" and "single").
+    const secret = 'sk_live_invalid-not-a-uuid_X7Qp3Z9aB2vR8sW1MnK0LjUyEdHfGiTcDbN';
     try {
-      new Scorezilla({ secretKey: { id: 'k', secret } });
+      new Scorezilla({ secretKey: secret });
       throw new Error('should have thrown');
     } catch (e) {
       const msg = (e as Error).message;
-      // No 6-char substring of the secret's payload (after the prefix)
-      // should appear in the error message.
+      // No 6-char substring of the secret's random tail should appear
+      // in the error message.
       const payload = secret.replace(/^sk_(live_|test_)/, '');
       for (let i = 0; i + 6 <= payload.length; i++) {
         expect(msg).not.toContain(payload.slice(i, i + 6));
@@ -180,7 +191,7 @@ describe('Scorezilla server — submitScore signs the request', () => {
     const headers = init.headers as Record<string, string>;
     expect(headers['Content-Type']).toBe('application/json');
     expect(headers['Authorization']).toMatch(new RegExp(`^${HMAC_AUTH_SCHEME} `));
-    expect(headers['Authorization']).toContain('keyId=sk-id-abc');
+    expect(headers['Authorization']).toContain(`keyId=${VALID_KEY_ID}`);
     expect(headers['Authorization']).toMatch(/ts=\d+,/);
     expect(headers['Authorization']).toMatch(/nonce=[0-9a-f-]{36},/i);
     expect(headers['Authorization']).toMatch(/signature=[A-Za-z0-9_-]+$/);

@@ -57,11 +57,16 @@ export type PublicKeyConfig = BaseConfig & {
   secretKey?: never;
 };
 
-/** Secret-key auth: server-side HMAC. The pair `{ id, secret }` is what
- *  the operator dashboard issues; the SDK signs requests with `secret` and
- *  identifies them via `id`. */
+/** Secret-key auth: server-side HMAC. A single self-contained token of the
+ *  shape `sk_live_<keyId>_<random>`. The SDK parses the keyId out and uses
+ *  the whole string as the HMAC key. One value to copy, one to manage —
+ *  matches Stripe's design and the public-key client's single-string shape.
+ *
+ *  Past versions of the SDK took `{ id, secret }` separately. That was an
+ *  unnecessary cognitive tax — the id was always derivable from a properly-
+ *  formatted secret. v0.1.0-next.2+ takes the single-string form. */
 export type SecretKeyConfig = BaseConfig & {
-  secretKey: { id: string; secret: string };
+  secretKey: string;
   publicKey?: never;
 };
 
@@ -152,17 +157,31 @@ function validatePublicKeyValue(pk: unknown): string {
   return pk;
 }
 
+/** Exact shape of the new secret-key format:
+ *
+ *   `sk_live_<keyId>_<random>`
+ *
+ * - `<keyId>` is a UUID v4 (hyphenated, 36 chars). Used by the API for
+ *   row lookup and as the `keyId=` parameter in HMAC Authorization
+ *   headers. Non-sensitive; appears in logs and audit trails.
+ * - `<random>` is a base62-encoded suffix from the operator dashboard's
+ *   issuance flow (~32 chars). The HMAC key is the WHOLE plaintext
+ *   string, so changing only the prefix doesn't weaken anything.
+ *
+ * Two-field `{ id, secret }` configs from pre-next.2 are NOT accepted —
+ * `validateSecretKey` requires a single string.
+ */
+export const SECRET_KEY_PATTERN =
+  /^sk_live_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})_[A-Za-z0-9]+$/;
+
 /**
  * Validate a {@link SecretKeyConfig} and return a normalized `{ keyId,
- * secret }`. Used by both the public {@link validateConfig} (for the
- * core SDK) and the server adapter's own constructor — separating the
- * two-path validation out of `validateConfig` lets the server entry
- * point import this without dragging the public-key branch into its
- * bundle.
+ * secret }`. The input is a single self-contained string; we parse the
+ * keyId out of it via {@link SECRET_KEY_PATTERN}.
  *
- * Throws a plain `Error` on misuse. The error never echoes the secret
- * itself — only the shape and prefix sanity, just like the public-key
- * validator.
+ * Throws a plain `Error` on misuse. The error never echoes any characters
+ * of the secret — only the shape and prefix sanity, just like the
+ * public-key validator.
  *
  * @stability internal — exposed for `scorezilla/server`'s constructor
  *                       and unit tests. Not part of the public API.
@@ -172,19 +191,21 @@ export function validateSecretKey(cfg: SecretKeyConfig): { keyId: string; secret
     throw new Error('scorezilla/server: config must be an object with a secretKey field');
   }
   const sk = cfg.secretKey;
-  if (!sk || typeof sk !== 'object' || typeof sk.id !== 'string' || typeof sk.secret !== 'string') {
-    throw new Error('scorezilla/server: secretKey must be an object with string `id` and `secret`');
-  }
-  if (sk.id.length === 0) {
-    throw new Error('scorezilla/server: secretKey.id must be a non-empty string');
-  }
-  if (!sk.secret.startsWith(SECRET_KEY_PREFIX)) {
-    // Never echo the value. A typo'd publicKey paste lands here often;
-    // we report shape only.
-    const shape = `string of length ${sk.secret.length}`;
+  if (typeof sk !== 'string') {
     throw new Error(
-      `scorezilla/server: secretKey.secret must start with "${SECRET_KEY_PREFIX}" (live keys only) (got: ${shape})`,
+      `scorezilla/server: secretKey must be a single string of the shape ${SECRET_KEY_PREFIX}<keyId>_<random> (got: ${typeof sk})`,
     );
   }
-  return { keyId: sk.id, secret: sk.secret };
+  const match = SECRET_KEY_PATTERN.exec(sk);
+  if (!match) {
+    // Never echo the value. A typo'd publicKey paste or a pre-next.2
+    // `{ id, secret }` object lands here.
+    const shape = `string of length ${sk.length}`;
+    throw new Error(
+      `scorezilla/server: secretKey must match ${SECRET_KEY_PATTERN.toString()} ` +
+        `(got: ${shape}). v0.1.0-next.2 switched to a single-token format — if you have a pre-next.2 ` +
+        `pair, issue a fresh key in the dashboard to upgrade.`,
+    );
+  }
+  return { keyId: match[1]!, secret: sk };
 }

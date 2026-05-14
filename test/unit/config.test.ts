@@ -40,30 +40,33 @@ describe('validateConfig — public-key path', () => {
 });
 
 describe('validateConfig — secret-key path', () => {
-  it('accepts a well-formed secretKey pair', () => {
-    const r = validateConfig({
-      secretKey: { id: 'sk-id-abc', secret: 'sk_live_abcdefGHIJKLmnopQRSTuv' },
-    });
+  it('accepts a well-formed single-token secretKey', () => {
+    const sk = 'sk_live_9493330f-a9e6-4bd6-914f-100f1e51ac36_abcdefGHIJKLmnopQRSTuv';
+    const r = validateConfig({ secretKey: sk });
     expect(r.auth).toEqual({
       kind: 'secret',
-      keyId: 'sk-id-abc',
-      secret: 'sk_live_abcdefGHIJKLmnopQRSTuv',
+      keyId: '9493330f-a9e6-4bd6-914f-100f1e51ac36',
+      secret: sk,
     });
   });
 
-  it('rejects secretKey whose secret lacks the live prefix', () => {
-    expect(() => validateConfig({ secretKey: { id: 'x', secret: 'sk_test_abc' } })).toThrow(
-      /must start with "sk_live_"/,
+  it('rejects secretKey lacking the embedded keyId (old `sk_live_<random>` format)', () => {
+    expect(() => validateConfig({ secretKey: 'sk_live_abcdefGHIJKLmnopQRSTuv' })).toThrow(
+      /must match/,
     );
   });
 
-  it('rejects malformed secretKey object', () => {
-    // @ts-expect-error — missing secret triggers the runtime defensive check
-    expect(() => validateConfig({ secretKey: { id: 'x' } })).toThrow(/secretKey must be an object/);
-    // @ts-expect-error — non-string id triggers the runtime defensive check
-    expect(() => validateConfig({ secretKey: { id: 42, secret: 'sk_live_x' } })).toThrow(
-      /secretKey must be an object/,
-    );
+  it('rejects secretKey with the wrong prefix', () => {
+    expect(() =>
+      validateConfig({ secretKey: 'sk_test_9493330f-a9e6-4bd6-914f-100f1e51ac36_abc' }),
+    ).toThrow(/must match/);
+  });
+
+  it('rejects pre-next.2 object form with a guiding error message', () => {
+    expect(() =>
+      // @ts-expect-error — legacy shape no longer accepted; runtime check catches it
+      validateConfig({ secretKey: { id: 'x', secret: 'sk_live_abc' } }),
+    ).toThrow(/single string/);
   });
 });
 
@@ -73,7 +76,7 @@ describe('validateConfig — mutual exclusivity', () => {
       // @ts-expect-error — discriminated union forbids both at compile time; runtime check is the second line of defense
       validateConfig({
         publicKey: 'pk_bloom_a',
-        secretKey: { id: 'x', secret: 'sk_live_a' },
+        secretKey: 'sk_live_9493330f-a9e6-4bd6-914f-100f1e51ac36_a',
       }),
     ).toThrow(/must not contain both/);
   });
