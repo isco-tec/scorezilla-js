@@ -89,8 +89,10 @@ describe('Scorezilla server — constructor validation', () => {
       try {
         Reflect.defineProperty(g, k, { value: undefined, configurable: true, writable: true });
       } catch {
-        allHostsCleared = false;
+        // defineProperty threw — non-configurable.
       }
+      // Read back: some runtimes (Bun) silently ignore the change.
+      if (g[k] !== undefined) allHostsCleared = false;
     }
     let allBrowsersSet = true;
     for (const k of browserGlobals) {
@@ -98,8 +100,9 @@ describe('Scorezilla server — constructor validation', () => {
       try {
         Reflect.defineProperty(g, k, { value: {}, configurable: true, writable: true });
       } catch {
-        allBrowsersSet = false;
+        // ignore
       }
+      if (g[k] === undefined) allBrowsersSet = false;
     }
     try {
       if (allHostsCleared && allBrowsersSet) {
