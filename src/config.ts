@@ -42,6 +42,12 @@ export interface BaseConfig {
   /** Override the default `User-Agent` header (Node/Workers/Bun/Deno —
    *  browsers silently ignore the value). */
   userAgent?: string;
+  /** Injectable sleep implementation for the retry loop's inter-attempt
+   *  pause. Exists for tests that need deterministic, zero-delay retries
+   *  rather than real wall-clock backoff. Production code should leave
+   *  this unset to use the default exponential backoff with jitter.
+   *  @internal */
+  sleepImpl?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
 
 /** Public-key auth: browser-safe path. The key is fingerprinted to a game
@@ -73,6 +79,7 @@ export interface ResolvedConfig {
   readonly fetch: FetchImpl | undefined;
   readonly timeoutMs: number | undefined;
   readonly maxRetries: number | undefined;
+  readonly sleepImpl: ((ms: number, signal?: AbortSignal) => Promise<void>) | undefined;
   readonly userAgent: string | undefined;
   readonly auth:
     | { kind: 'public'; key: string }
@@ -120,6 +127,7 @@ export function validateConfig(cfg: ScorezillaConfig): ResolvedConfig {
     fetch: cfg.fetch,
     timeoutMs: cfg.timeoutMs,
     maxRetries: cfg.maxRetries,
+    sleepImpl: cfg.sleepImpl,
     userAgent: cfg.userAgent,
     auth,
   };

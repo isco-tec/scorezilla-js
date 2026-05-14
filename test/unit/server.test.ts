@@ -254,10 +254,16 @@ describe('Scorezilla server — submitScore signs the request', () => {
       });
     }) as unknown as FetchImpl;
 
-    const sz = new Scorezilla({ ...VALID_CONFIG, fetch: fetchImpl, maxRetries: 1 });
-    // Inject zero sleep via the lower-level transport — not exposed at the
-    // server constructor level, so we rely on default backoff. To keep
-    // the test fast, the deliberate 503→200 sequence completes in <300ms.
+    // `sleepImpl` is exposed on the server constructor for deterministic
+    // tests. Production code never passes it; the default
+    // exponential-with-jitter backoff is what real callers experience.
+    const instantSleep = async (): Promise<void> => Promise.resolve();
+    const sz = new Scorezilla({
+      ...VALID_CONFIG,
+      fetch: fetchImpl,
+      maxRetries: 1,
+      sleepImpl: instantSleep,
+    });
     const result = await sz.submitScore({ boardId: 'b', playerId: 'p', score: 1 });
     expect(result.ok).toBe(true);
     expect(seenAuthHeaders).toHaveLength(2);

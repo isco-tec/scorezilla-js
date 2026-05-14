@@ -130,14 +130,14 @@ jobs:
 
       # ─── SRI hash generation.
       #
-      # Gated on `scripts/publish.sh`'s own `$GITHUB_OUTPUT` signal rather
-      # than `steps.changesets.outputs.published`. The action parses npm's
-      # publish stdout for confirmation; pnpm's output doesn't match, and
-      # even with our switch to `npm publish` we want a publish-detection
-      # signal we own end-to-end so future tooling swaps don't break the
-      # post-publish chain silently.
+      # Gated on `scripts/publish.sh`'s own `$GITHUB_OUTPUT` signals
+      # (`published_name` + `published_version`) rather than
+      # `steps.changesets.outputs.published`/`publishedPackages`. The
+      # action's stdout-parsing empirically reports `publishedPackages:
+      # []` for our publishes (scorezilla-js#20); owning the signal
+      # end-to-end means downstream steps never silently no-op.
       - name: Generate SRI block
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.changesets.outputs.published_name != '' && steps.changesets.outputs.published_version != ''
         id: sri
         run: |
           set -euo pipefail
@@ -174,78 +174,78 @@ jobs:
           echo "----"
 
       - name: Append SRI hashes to GitHub release
-        if: steps.changesets.outputs.published == 'true'
+        # Two gates: changesets/action says "I published" AND our own
+        # publish.sh wrote the package name+version to $GITHUB_OUTPUT.
+        # The action's `publishedPackages` array empirically comes back
+        # `[]` even when a publish succeeded (scorezilla-js#20) because
+        # the stdout-parsing relies on changesets/action's own
+        # JSON-emission path which our publish.sh doesn't trigger.
+        # Owning the signal end-to-end means downstream steps never
+        # silently no-op.
+        if: steps.changesets.outputs.published_name != '' && steps.changesets.outputs.published_version != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Pass the action's output through the environment instead of
-          # ${{ }} interpolation. YAML interpolation substitutes the raw
-          # string into the script at parse time — if the output ever
-          # contained shell metacharacters (backtick, $(...), newlines)
-          # the runner would execute attacker-controlled code. Reading
-          # from $PUBLISHED_PACKAGES instead keeps the value in shell
-          # variable space where quoting works correctly. (CWE-77.)
-          PUBLISHED_PACKAGES: ${{ steps.changesets.outputs.publishedPackages }}
+          # Env-pass-through rather than ${{ }} interpolation — same
+          # injection-defense reasoning as before (CWE-77). Even though
+          # publish.sh sets these, treat them as untrusted from the
+          # workflow's perspective.
+          PUBLISHED_NAME: ${{ steps.changesets.outputs.published_name }}
+          PUBLISHED_VERSION: ${{ steps.changesets.outputs.published_version }}
         run: |
           set -euo pipefail
-          if [ -z "${PUBLISHED_PACKAGES:-}" ] || [ "$PUBLISHED_PACKAGES" = "[]" ]; then
-            echo "No published packages reported by changesets/action — nothing to annotate."
-            exit 0
-          fi
+          tag="${PUBLISHED_NAME}@${PUBLISHED_VERSION}"
           sri_block=$(cat /tmp/release-sri.md)
-          echo "$PUBLISHED_PACKAGES" | jq -c '.[]' | while read -r row; do
-            name=$(echo "$row" | jq -r '.name')
-            version=$(echo "$row" | jq -r '.version')
-            tag="${name}@${version}"
-            echo "Annotating GitHub release $tag with SRI hashes…"
-            current=$(gh release view "$tag" --json body --jq '.body' 2>/dev/null || echo "")
-            new_body=$(printf '%s\n\n%s\n' "$current" "$sri_block")
-            gh release edit "$tag" --notes "$new_body"
-            echo "  → done"
-          done
+          echo "Annotating GitHub release $tag with SRI hashes…"
+          # `changesets/action` opens the release as part of its publish
+          # branch. If it didn't (rare — typically a misconfig), create
+          # one ourselves so the SRI block has a home.
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            echo "  → release $tag doesn't exist yet, creating it"
+            gh release create "$tag" --title "$tag" --prerelease --notes ""
+          fi
+          current=$(gh release view "$tag" --json body --jq '.body' 2>/dev/null || echo "")
+          new_body=$(printf '%s\n\n%s\n' "$current" "$sri_block")
+          gh release edit "$tag" --notes "$new_body"
+          echo "  → done"
 
       # ─── Smoke-confirm the new tarball is installable.
       - name: Post-publish smoke test
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.changesets.outputs.published_name != '' && steps.changesets.outputs.published_version != ''
         env:
-          # Same injection-defense reasoning as the previous step:
-          # pass the package list via env, not ${{ }} interpolation.
-          PUBLISHED_PACKAGES: ${{ steps.changesets.outputs.publishedPackages }}
+          # Same env-pass-through pattern as above.
+          PUBLISHED_NAME: ${{ steps.changesets.outputs.published_name }}
+          PUBLISHED_VERSION: ${{ steps.changesets.outputs.published_version }}
         run: |
           set -euo pipefail
-          echo "$PUBLISHED_PACKAGES" | jq -c '.[]' | while read -r row; do
-            name=$(echo "$row" | jq -r '.name')
-            version=$(echo "$row" | jq -r '.version')
-            echo "Waiting for ${name}@${version} to appear on registry…"
-            for i in $(seq 1 30); do
-              if npm view "${name}@${version}" version > /dev/null 2>&1; then
-                echo "  → visible after ${i} attempt(s)"
-                break
-              fi
-              if [ "$i" = "30" ]; then
-                echo "  → did NOT appear within 30 attempts (~5 min); failing."
-                exit 1
-              fi
-              sleep 10
-            done
-            tmp=$(mktemp -d)
-            cd "$tmp"
-            npm init -y > /dev/null
-            npm install "${name}@${version}" --no-audit --no-fund > /dev/null
-            # Pass name + version as argv to a heredoc-launched node, so
-            # they never reach the JS source via shell substitution.
-            # Otherwise a metachar-containing package name (defended by
-            # the env-pass-through above but worth defense in depth) would
-            # be able to break out of the `-e` string into JS context.
-            EXPECT_NAME="$name" EXPECT_VERSION="$version" node --input-type=module -e "
-              const name = process.env.EXPECT_NAME;
-              const version = process.env.EXPECT_VERSION;
-              const p = await import(name);
-              if (!p.Scorezilla) throw new Error(name + ': Scorezilla export missing');
-              if (!p.SDK_VERSION || p.SDK_VERSION !== version) {
-                throw new Error(name + ': SDK_VERSION mismatch — expected ' + version + ', got ' + p.SDK_VERSION);
-              }
-            "
-            echo "  → ${name}@${version} installs cleanly and exports the expected surface"
-            cd - > /dev/null
-            rm -rf "$tmp"
+          name="$PUBLISHED_NAME"
+          version="$PUBLISHED_VERSION"
+          echo "Waiting for ${name}@${version} to appear on registry…"
+          for i in $(seq 1 30); do
+            if npm view "${name}@${version}" version > /dev/null 2>&1; then
+              echo "  → visible after ${i} attempt(s)"
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              echo "  → did NOT appear within 30 attempts (~5 min); failing."
+              exit 1
+            fi
+            sleep 10
           done
+          tmp=$(mktemp -d)
+          cd "$tmp"
+          npm init -y > /dev/null
+          npm install "${name}@${version}" --no-audit --no-fund > /dev/null
+          # Pass name + version as argv to a heredoc-launched node, so
+          # they never reach the JS source via shell substitution.
+          EXPECT_NAME="$name" EXPECT_VERSION="$version" node --input-type=module -e "
+            const name = process.env.EXPECT_NAME;
+            const version = process.env.EXPECT_VERSION;
+            const p = await import(name);
+            if (!p.Scorezilla) throw new Error(name + ': Scorezilla export missing');
+            if (!p.SDK_VERSION || p.SDK_VERSION !== version) {
+              throw new Error(name + ': SDK_VERSION mismatch — expected ' + version + ', got ' + p.SDK_VERSION);
+            }
+          "
+          echo "  → ${name}@${version} installs cleanly and exports the expected surface"
+          cd - > /dev/null
+          rm -rf "$tmp"

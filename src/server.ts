@@ -154,6 +154,7 @@ export class Scorezilla {
   readonly #fetchImpl: FetchImpl | undefined;
   readonly #timeoutMs: number | undefined;
   readonly #maxRetries: number | undefined;
+  readonly #sleepImpl: ((ms: number, signal?: AbortSignal) => Promise<void>) | undefined;
   readonly #userAgent: string;
 
   constructor(config: SecretKeyConfig) {
@@ -189,6 +190,7 @@ export class Scorezilla {
     this.#fetchImpl = config.fetch;
     this.#timeoutMs = config.timeoutMs;
     this.#maxRetries = config.maxRetries;
+    this.#sleepImpl = config.sleepImpl;
     this.#userAgent = config.userAgent ?? defaultUserAgent(Scorezilla.version);
   }
 
@@ -281,8 +283,11 @@ export class Scorezilla {
     if (opts.body !== undefined) requestOpts.body = opts.body;
     if (this.#fetchImpl !== undefined) requestOpts.fetchImpl = this.#fetchImpl;
     if (this.#timeoutMs !== undefined) requestOpts.timeoutMs = this.#timeoutMs;
-    if (this.#maxRetries !== undefined) {
-      requestOpts.retry = { maxRetries: this.#maxRetries };
+    if (this.#maxRetries !== undefined || this.#sleepImpl !== undefined) {
+      requestOpts.retry = {
+        ...(this.#maxRetries !== undefined ? { maxRetries: this.#maxRetries } : {}),
+        ...(this.#sleepImpl !== undefined ? { sleepImpl: this.#sleepImpl } : {}),
+      };
     }
 
     return request<T>(requestOpts);
