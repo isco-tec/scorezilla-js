@@ -194,7 +194,11 @@ describe('Scorezilla server — submitScore signs the request', () => {
     expect(headers['Authorization']).toContain(`keyId=${VALID_KEY_ID}`);
     expect(headers['Authorization']).toMatch(/ts=\d+,/);
     expect(headers['Authorization']).toMatch(/nonce=[0-9a-f-]{36},/i);
-    expect(headers['Authorization']).toMatch(/signature=[A-Za-z0-9_-]+$/);
+    expect(headers['Authorization']).toMatch(/signature=[A-Za-z0-9_-]+/);
+    // v=2 (host-bound canonical signing string, A-H4). Pre-next.3 SDKs
+    // didn't emit a v= field; tests pinning that absence would break here
+    // intentionally — the wire format changed.
+    expect(headers['Authorization']).toMatch(/, v=2$/);
 
     // Body contains boardId — it has moved from path to body for /v1/secure/scores.
     const body = JSON.parse(init.body);
