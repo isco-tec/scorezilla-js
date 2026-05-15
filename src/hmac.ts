@@ -34,6 +34,11 @@ export const HMAC_AUTH_SCHEME = 'Scorezilla-HMAC-SHA256';
  *  can surface friendly errors when their host clock is wildly off. */
 export const HMAC_TIMESTAMP_WINDOW_SECONDS = 300;
 
+/** Latest signing-string format version this SDK emits. The API verifier
+ *  also accepts v=1 (legacy, no host binding) during the rollout window —
+ *  see `apps/api/src/auth/hmac.ts` in the monorepo. */
+export const HMAC_SIGNING_VERSION_LATEST = 2 as const;
+
 /**
  * Construct the canonical signing string. Pure — no I/O. Both sender
  * (this module) and verifier (the API) call this with the same inputs
@@ -41,8 +46,16 @@ export const HMAC_TIMESTAMP_WINDOW_SECONDS = 300;
  *
  * `pathAndQuery` is signed verbatim. If the SDK ever URL-encodes path
  * segments differently than the server does, signatures will mismatch.
- * The path-helper functions in `src/paths.ts` produce the canonical form
- * the API expects.
+ *
+ * `host` MUST be the host portion of the URL the request is being sent
+ * to. It's lowercased here per RFC 9110 §4.2.4 (case-insensitive host
+ * comparison). With v=2 (current default), `host` is the 4th line of
+ * the canonical string and binds the signature to the target origin so
+ * a signature minted against staging cannot replay against prod.
+ *
+ * `version` defaults to {@link HMAC_SIGNING_VERSION_LATEST}. v=1 (legacy,
+ * pre-A-H4) omits `host` from the canonical string — kept for compat
+ * tests; production callers should not pass v=1.
  */
 export async function buildSigningString(
   method: string,
@@ -50,9 +63,15 @@ export async function buildSigningString(
   ts: number,
   nonce: string,
   body: string,
+  host: string,
+  version: number = HMAC_SIGNING_VERSION_LATEST,
 ): Promise<string> {
   const bodyHash = await sha256Hex(body);
-  return `${ts}\n${nonce}\n${method.toUpperCase()}\n${pathAndQuery}\n${bodyHash}`;
+  const upperMethod = method.toUpperCase();
+  if (version === 1) {
+    return `${ts}\n${nonce}\n${upperMethod}\n${pathAndQuery}\n${bodyHash}`;
+  }
+  return `${ts}\n${nonce}\n${upperMethod}\n${host.toLowerCase()}\n${pathAndQuery}\n${bodyHash}`;
 }
 
 /** HMAC-SHA-256 of `message` with `secret` (UTF-8 encoded), base64url. */
@@ -84,6 +103,11 @@ export async function sha256Hex(message: string): Promise<string> {
  * again — reusing a (ts, nonce) is what the server's replay protection
  * rejects.
  *
+ * Emits v=2 by default (host-bound). The API verifier still accepts v=1
+ * (no host binding) for pre-A-H4 SDK builds during the rollout window;
+ * see `apps/api/src/auth/hmac.ts:parseAuthHeader`. New code paths should
+ * use v=2 — the v=1 escape hatch exists only for legacy interop.
+ *
  * @returns the full header value (including the scheme prefix)
  */
 export async function buildHmacAuthHeader(args: {
@@ -91,23 +115,37 @@ export async function buildHmacAuthHeader(args: {
   secret: string;
   method: string;
   pathAndQuery: string;
+  /** Host portion of the request URL (e.g. `new URL(baseUrl).host`). v=2
+   *  signatures bind to this; v=1 ignores it. */
+  host: string;
   body: string;
   /** Injectable for tests; defaults to `Math.floor(Date.now() / 1000)`. */
   nowSeconds?: number;
   /** Injectable for tests; defaults to `crypto.randomUUID()`. */
   nonce?: string;
+  /** Signing-string version. Defaults to {@link HMAC_SIGNING_VERSION_LATEST}.
+   *  v=1 omits both the host from the canonical string AND the `v=` param
+   *  from the header (for byte-for-byte parity with pre-A-H4 SDKs). */
+  version?: 1 | 2;
 }): Promise<string> {
   const ts = args.nowSeconds ?? Math.floor(Date.now() / 1000);
   const nonce = args.nonce ?? generateNonce();
+  const version = args.version ?? HMAC_SIGNING_VERSION_LATEST;
   const signingString = await buildSigningString(
     args.method,
     args.pathAndQuery,
     ts,
     nonce,
     args.body,
+    args.host,
+    version,
   );
   const signature = await hmacSha256B64u(args.secret, signingString);
-  return `${HMAC_AUTH_SCHEME} keyId=${args.keyId}, ts=${ts}, nonce=${nonce}, signature=${signature}`;
+  // v=1: omit the `v=` param (back-compat byte parity).
+  // v=2 (default): append `v=2` so the verifier knows to include host in
+  // the canonical string. Future versions follow the same pattern.
+  const vParam = version === 1 ? '' : `, v=${version}`;
+  return `${HMAC_AUTH_SCHEME} keyId=${args.keyId}, ts=${ts}, nonce=${nonce}, signature=${signature}${vParam}`;
 }
 
 /**

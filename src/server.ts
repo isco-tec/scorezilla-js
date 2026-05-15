@@ -151,6 +151,10 @@ export class Scorezilla {
   readonly #keyId: string;
   readonly #secret: string;
   readonly #baseUrl: string;
+  /** Host portion of `#baseUrl` (e.g. "api.scorezilla.dev"). Captured at
+   *  construction so every signed request binds to this exact origin —
+   *  see `buildSigningString` v=2 in `hmac.ts`. */
+  readonly #host: string;
   readonly #fetchImpl: FetchImpl | undefined;
   readonly #timeoutMs: number | undefined;
   readonly #maxRetries: number | undefined;
@@ -187,6 +191,16 @@ export class Scorezilla {
     this.#keyId = resolved.keyId;
     this.#secret = resolved.secret;
     this.#baseUrl = (config.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '');
+    // Derive host once. URL parsing is also a soft validation of baseUrl —
+    // a malformed baseUrl (no scheme, etc.) would throw here at boot rather
+    // than surface as a confusing "signature mismatch" 401 on every request.
+    try {
+      this.#host = new URL(this.#baseUrl).host;
+    } catch {
+      throw new Error(
+        `scorezilla/server: baseUrl must be a valid absolute URL (got: ${this.#baseUrl})`,
+      );
+    }
     this.#fetchImpl = config.fetch;
     this.#timeoutMs = config.timeoutMs;
     this.#maxRetries = config.maxRetries;
@@ -277,6 +291,7 @@ export class Scorezilla {
           secret: this.#secret,
           method,
           pathAndQuery,
+          host: this.#host,
           body,
         }),
     };
