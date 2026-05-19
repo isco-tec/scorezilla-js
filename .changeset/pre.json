@@ -5,7 +5,9 @@
     "scorezilla": "0.0.0"
   },
   "changesets": [
+    "hmac-v2-host-binding",
     "initial-release",
+    "security-pre-release-hardening",
     "server-hmac-adapter",
     "single-token-secret"
   ]
