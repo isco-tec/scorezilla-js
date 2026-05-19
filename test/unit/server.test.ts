@@ -92,6 +92,11 @@ describe('Scorezilla server — constructor validation', () => {
     // failure).
     const g = globalThis as Record<string, unknown>;
     const browserGlobals = ['window', 'document'] as const;
+    // `EdgeRuntime` is intentionally absent from the trusted set in
+    // `isRealBrowserEnvironment` (v0.1.0-next.3 security pass) — a
+    // browser extension can polyfill it. Keep it in the CLEARED list
+    // here so a real-browser simulation doesn't accidentally trip the
+    // (former) bypass.
     const hostGlobals = ['process', 'Deno', 'Bun', 'EdgeRuntime'] as const;
     const originals: Record<string, unknown> = {};
     let allHostsCleared = true;
@@ -150,6 +155,81 @@ describe('Scorezilla server — constructor validation', () => {
     // browser. The base test config has window+document (jsdom) AND
     // process.versions.node (real Node host) — guard must allow this.
     expect(() => new Scorezilla(VALID_CONFIG)).not.toThrow();
+  });
+
+  it('does NOT trust a polyfilled `globalThis.EdgeRuntime` to bypass the browser guard (security: M1)', () => {
+    // Closes review-flagged MEDIUM M1 (v0.1.0-next.3 security pass).
+    // A browser extension or bundler misconfig could set
+    // `globalThis.EdgeRuntime = 'edge'` on a real browser page. Pre-fix
+    // that polyfill would have been treated as "I'm Vercel Edge,
+    // trust me" and the guard would have allowed Scorezilla() to
+    // instantiate in a browser, exposing the secret key in memory.
+    // After the fix, EdgeRuntime is no longer in the trusted set,
+    // so this exact scenario throws.
+    const g = globalThis as Record<string, unknown>;
+    const realHostGlobals = ['process', 'Deno', 'Bun'] as const;
+    const browserGlobals = ['window', 'document'] as const;
+    const originals: Record<string, unknown> = {};
+    let allRealHostsCleared = true;
+    for (const k of realHostGlobals) {
+      originals[k] = g[k];
+      try {
+        Reflect.defineProperty(g, k, { value: undefined, configurable: true, writable: true });
+      } catch {
+        /* non-configurable */
+      }
+      if (g[k] !== undefined) allRealHostsCleared = false;
+    }
+    let allBrowsersSet = true;
+    for (const k of browserGlobals) {
+      originals[k] = g[k];
+      try {
+        Reflect.defineProperty(g, k, { value: {}, configurable: true, writable: true });
+      } catch {
+        /* ignore */
+      }
+      if (g[k] === undefined) allBrowsersSet = false;
+    }
+    // The hostile polyfill: an adversarial page sets EdgeRuntime to
+    // try to bypass the guard.
+    originals.EdgeRuntime = g.EdgeRuntime;
+    try {
+      Reflect.defineProperty(g, 'EdgeRuntime', {
+        value: 'edge',
+        configurable: true,
+        writable: true,
+      });
+    } catch {
+      /* ignore */
+    }
+    try {
+      if (allRealHostsCleared && allBrowsersSet) {
+        expect(() => new Scorezilla(VALID_CONFIG)).toThrow(
+          /scorezilla\/server: this adapter is server-only/,
+        );
+      } else {
+        // Couldn't fully simulate (Bun makes its identity non-
+        // configurable). Skip the strict assert — the JSDoc + code
+        // change in src/server.ts are the load-bearing artifacts.
+        expect(true).toBe(true);
+      }
+    } finally {
+      for (const k of [...realHostGlobals, ...browserGlobals, 'EdgeRuntime'] as string[]) {
+        try {
+          if (originals[k] === undefined && !(k in originals)) {
+            Reflect.deleteProperty(g, k);
+          } else {
+            Reflect.defineProperty(g, k, {
+              value: originals[k],
+              configurable: true,
+              writable: true,
+            });
+          }
+        } catch {
+          /* defensive */
+        }
+      }
+    }
   });
 });
 
