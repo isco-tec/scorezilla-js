@@ -318,10 +318,20 @@ export class Scorezilla {
  *   - Cloudflare Workers
  *     w/ nodejs_compat:   `process.versions.node` too
  *   - Deno:               `globalThis.Deno`
- *   - Vercel Edge:        `globalThis.EdgeRuntime`
  *
- * If ANY of these is present we're not in a real browser, and we trust
- * the caller. Otherwise, if browser globals exist, refuse.
+ * `globalThis.EdgeRuntime` is intentionally NOT on the trust list. It's
+ * a Vercel-Edge convention that can be polyfilled by browser extensions
+ * or bundler misconfiguration; trusting it would let an adversarial
+ * page bypass the runtime guard by setting `globalThis.EdgeRuntime =
+ * 'edge'`. The package's `exports.browser` condition remains the
+ * primary gate against browser loading; this runtime check is
+ * defense-in-depth and should err on the side of REFUSING.
+ *
+ * Real Vercel Edge code typically lacks `window` and `document` so it
+ * never reaches the disqualifier branch — no false positive.
+ *
+ * If ANY trusted server runtime is detected we trust the caller.
+ * Otherwise, if browser globals exist, refuse.
  */
 function isRealBrowserEnvironment(): boolean {
   const g = globalThis as {
@@ -329,7 +339,6 @@ function isRealBrowserEnvironment(): boolean {
     document?: unknown;
     Deno?: unknown;
     Bun?: unknown;
-    EdgeRuntime?: unknown;
     process?: { versions?: { node?: string } };
   };
   const hasBrowserGlobals = typeof g.window !== 'undefined' && typeof g.document !== 'undefined';
@@ -337,8 +346,7 @@ function isRealBrowserEnvironment(): boolean {
   const hasNodeLikeHost =
     Boolean(g.process?.versions?.node) ||
     typeof g.Deno !== 'undefined' ||
-    typeof g.Bun !== 'undefined' ||
-    typeof g.EdgeRuntime !== 'undefined';
+    typeof g.Bun !== 'undefined';
   return !hasNodeLikeHost;
 }
 

@@ -29,10 +29,14 @@ const enc = new TextEncoder();
 /** Auth-scheme prefix. Mirrors the API's `AUTH_SCHEME` constant exactly. */
 export const HMAC_AUTH_SCHEME = 'Scorezilla-HMAC-SHA256';
 
-/** Maximum drift, in seconds, between the SDK's clock and the API's. The
- *  server-side window is ±5 minutes; we publish that here so SDK callers
- *  can surface friendly errors when their host clock is wildly off. */
-export const HMAC_TIMESTAMP_WINDOW_SECONDS = 300;
+/** Minimum acceptable length for a caller-supplied nonce. The default
+ *  path uses `crypto.randomUUID()` which is 36 characters; injectable
+ *  nonces (test paths, advanced custom-flow consumers) must clear a
+ *  conservative floor so a misconfigured caller can't accidentally
+ *  emit a signed header with a weak or empty nonce. 16 characters is
+ *  the documented minimum and matches the server's lower bound for
+ *  acceptable replay-protection entropy. */
+const MIN_NONCE_LENGTH = 16;
 
 /** Latest signing-string format version this SDK emits. The API verifier
  *  also accepts v=1 (legacy, no host binding) during the rollout window —
@@ -129,6 +133,20 @@ export async function buildHmacAuthHeader(args: {
   version?: 1 | 2;
 }): Promise<string> {
   const ts = args.nowSeconds ?? Math.floor(Date.now() / 1000);
+  // If a nonce was injected, validate it. The default path generates a
+  // 36-char UUIDv4 which trivially clears the floor — only test or
+  // advanced-custom-flow callers ever supply their own. Guarding here
+  // means a misconfigured caller can't accidentally sign with an empty
+  // or weak nonce that the server's replay protection might still
+  // accept (`hmac.ts` on the API side has no minimum-length check).
+  if (args.nonce !== undefined) {
+    if (typeof args.nonce !== 'string' || args.nonce.length < MIN_NONCE_LENGTH) {
+      throw new Error(
+        `scorezilla: nonce must be a string of at least ${MIN_NONCE_LENGTH} characters; ` +
+          'use the default (UUIDv4 via crypto.randomUUID) unless you have a specific reason.',
+      );
+    }
+  }
   const nonce = args.nonce ?? generateNonce();
   const version = args.version ?? HMAC_SIGNING_VERSION_LATEST;
   const signingString = await buildSigningString(

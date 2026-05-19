@@ -26,7 +26,6 @@ import {
   hmacSha256B64u,
   HMAC_AUTH_SCHEME,
   HMAC_SIGNING_VERSION_LATEST,
-  HMAC_TIMESTAMP_WINDOW_SECONDS,
   sha256Hex,
 } from '../../src/hmac';
 
@@ -35,12 +34,16 @@ describe('constants — wire contract', () => {
     // If this changes, the API stops accepting our requests.
     expect(HMAC_AUTH_SCHEME).toBe('Scorezilla-HMAC-SHA256');
   });
-  it('exposes the timestamp window the API enforces', () => {
-    expect(HMAC_TIMESTAMP_WINDOW_SECONDS).toBe(300);
-  });
   it('latest signing version is 2 (host-bound)', () => {
     expect(HMAC_SIGNING_VERSION_LATEST).toBe(2);
   });
+  // HMAC_TIMESTAMP_WINDOW_SECONDS was previously exported here as
+  // documentation of the server's clock-skew tolerance. Removed in
+  // the v0.1.0-next.3 security pass — publishing the server's policy
+  // tolerance in the SDK's public API was unnecessary info disclosure
+  // (it narrowed the precompute window for any future timestamp
+  // forgery work). The SDK has no behavioral dependency on the value;
+  // it always emits a fresh `ts = floor(Date.now() / 1000)`.
 });
 
 describe('sha256Hex', () => {
@@ -180,7 +183,7 @@ describe('buildHmacAuthHeader — v=2 default', () => {
       host: 'h',
       body: '',
       nowSeconds: 1,
-      nonce: 'a',
+      nonce: 'test-nonce-fixed-aaaa',
     });
     const h2 = await buildHmacAuthHeader({
       keyId: 'k',
@@ -190,7 +193,7 @@ describe('buildHmacAuthHeader — v=2 default', () => {
       host: 'h',
       body: '',
       nowSeconds: 2,
-      nonce: 'a',
+      nonce: 'test-nonce-fixed-aaaa',
     });
     expect(h1).not.toBe(h2);
   });
@@ -204,7 +207,7 @@ describe('buildHmacAuthHeader — v=2 default', () => {
       pathAndQuery: '/x',
       host: 'h',
       body: '',
-      nonce: 'n',
+      nonce: 'test-nonce-fixed-aaaa',
     });
     const after = Math.floor(Date.now() / 1000);
     const match = /ts=(\d+)/.exec(header);
@@ -240,14 +243,80 @@ describe('buildHmacAuthHeader — v=1 backward compat', () => {
       host: 'ignored-at-v1',
       body: '{"boardId":"b","playerId":"p","score":1}',
       nowSeconds: 1700000000,
-      nonce: 'n',
+      nonce: 'test-nonce-fixed-aaaa',
       version: 1,
     });
     // Pinned to the EXACT pre-A-H4 wire format. If this changes, we've
     // broken backward compat — the API's v=1 acceptance path would still
     // work but pre-next.3 SDKs would no longer match the format.
+    // Nonce updated from 'n' to a 16-char string to clear the
+    // min-nonce-length guard added in v0.1.0-next.3 (security pass);
+    // signature recomputed accordingly. The v=1 wire SHAPE
+    // (keyId / ts / nonce / signature, no v= param) is what this test
+    // pins, not the exact nonce value.
     expect(header).toBe(
-      'Scorezilla-HMAC-SHA256 keyId=k1, ts=1700000000, nonce=n, signature=6ZJ9KZemDkX9S8OV6UnNsRvjR0UtH9aIJmqRkNTjbPU',
+      'Scorezilla-HMAC-SHA256 keyId=k1, ts=1700000000, nonce=test-nonce-fixed-aaaa, signature=0F5S3AEQlxcixiSK8ccunKUnlcyM83PwmK6xkYet8DU',
+    );
+  });
+});
+
+describe('buildHmacAuthHeader — nonce validation (security: H1)', () => {
+  // Closes review-flagged HIGH H1 (pre-v0.1.0-next.3 security pass): a
+  // caller could pass nonce: '' or nonce: '0' and silently sign a
+  // header with effectively-no replay protection. The 16-char floor
+  // matches the conservative minimum for replay-protection entropy.
+  it('rejects an empty injected nonce', async () => {
+    await expect(
+      buildHmacAuthHeader({
+        keyId: 'k',
+        secret: 's',
+        method: 'GET',
+        pathAndQuery: '/x',
+        host: 'h',
+        body: '',
+        nonce: '',
+      }),
+    ).rejects.toThrow(/at least 16 characters/);
+  });
+
+  it('rejects a too-short injected nonce', async () => {
+    await expect(
+      buildHmacAuthHeader({
+        keyId: 'k',
+        secret: 's',
+        method: 'GET',
+        pathAndQuery: '/x',
+        host: 'h',
+        body: '',
+        nonce: 'short',
+      }),
+    ).rejects.toThrow(/at least 16 characters/);
+  });
+
+  it('accepts a nonce that meets the floor', async () => {
+    const header = await buildHmacAuthHeader({
+      keyId: 'k',
+      secret: 's',
+      method: 'GET',
+      pathAndQuery: '/x',
+      host: 'h',
+      body: '',
+      nonce: 'just-at-the-floor', // 17 chars
+    });
+    expect(header).toContain('nonce=just-at-the-floor');
+  });
+
+  it('uses the default UUID nonce when none is provided (no validation triggered)', async () => {
+    const header = await buildHmacAuthHeader({
+      keyId: 'k',
+      secret: 's',
+      method: 'GET',
+      pathAndQuery: '/x',
+      host: 'h',
+      body: '',
+    });
+    expect(header).toMatch(
+      /nonce=[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i,
     );
   });
 });
