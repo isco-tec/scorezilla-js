@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.1.0-next.3
+
+### Minor Changes
+
+- [#25](https://github.com/isco-tec/scorezilla-js/pull/25) [`5f7025b`](https://github.com/isco-tec/scorezilla-js/commit/5f7025b7b06dded92b3e710316454eb8c891d053) Thanks [@isco-tec](https://github.com/isco-tec)! - **`scorezilla/server`: HMAC requests now bind to the target host (v=2).**
+
+  The canonical signing string includes the host of the request URL, so a signature minted against staging cannot be replayed against prod (or any other origin that happens to share key material). SigV4 has had this since day one; closing the gap before MCP locks the format.
+
+  Wire format change:
+
+  ```
+  Authorization: Scorezilla-HMAC-SHA256 keyId=…, ts=…, nonce=…, signature=…, v=2
+  ```
+
+  The `v=2` parameter is new. The canonical signing string now has six lines instead of five — `host` is inserted between `METHOD` and `pathAndQuery`, lowercased per RFC 9110 §4.2.4.
+
+  **Backward compatibility.** The API verifier still accepts v=1 (no `v=` field, no host binding) during the rollout window — your existing pre-next.3 SDK builds will keep working until v=1 is deprecated. The SDK itself, however, emits v=2 unconditionally from next.3 onwards. If you've forked or wrapped `buildHmacAuthHeader` / `buildSigningString`, you'll need to thread a `host` parameter through.
+
+  **For consumers of `Scorezilla` from `scorezilla/server`:** no API changes. The constructor derives `host` from `baseUrl` automatically. As an added safety net, an invalid `baseUrl` now throws at construction time rather than producing 401 mismatches at every request.
+
+  **For low-level consumers of `buildSigningString` / `buildHmacAuthHeader`:** a new `host` parameter is now required. The latter also accepts an optional `version: 1 | 2` for explicit backward-compat scenarios.
+
+### Patch Changes
+
+- [#28](https://github.com/isco-tec/scorezilla-js/pull/28) [`94b39d2`](https://github.com/isco-tec/scorezilla-js/commit/94b39d2e67ec7bba2681145560529f058acfc633) Thanks [@isco-tec](https://github.com/isco-tec)! - **Pre-release security hardening pass.** Three issues surfaced by a focused security review before the first public release of `scorezilla/server`:
+  - **HIGH — nonce injection.** `buildHmacAuthHeader` now requires injected nonces to be at least 16 characters. The default path (`crypto.randomUUID()`) is unaffected. Previously a misconfigured caller could pass `nonce: ''` and silently sign a header with no replay protection — the server has no minimum-length check, so the API would accept it. Now caught at SDK build-time with a clear error.
+  - **HIGH — server policy disclosure.** `HMAC_TIMESTAMP_WINDOW_SECONDS = 300` was previously exported as documentation of the API's clock-skew tolerance. Removed from the public API — publishing the server's replay-protection window in the SDK's types was unnecessary information disclosure and narrowed the pre-computation window for any future timestamp-forgery work. The SDK has no behavioral dependency on the value (it always emits a fresh `ts = floor(Date.now() / 1000)`).
+  - **MEDIUM — `EdgeRuntime` polyfill bypass.** The server adapter's runtime browser-guard previously trusted `globalThis.EdgeRuntime` as a "this is a server" signal. A browser extension or bundler misconfig setting that global would have bypassed the guard. Removed from the trusted set — the package's `exports.browser` condition remains the primary gate, and the runtime check now refuses to trust globals that can be polyfilled from a browser context. Real Vercel Edge runtimes still pass the guard because they don't have `window`/`document`.
+
+  No external-attack surface was exploitable; all three are self-inflicted/defense-in-depth issues caught before the first stable release. Tests added: 4 for nonce validation (rejects empty / too-short, accepts at-floor / default UUID), 1 for the EdgeRuntime polyfill scenario.
+
 ## 0.1.0-next.2
 
 ### Minor Changes
