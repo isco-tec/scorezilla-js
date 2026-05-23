@@ -268,12 +268,21 @@ export class ScorezillaError extends Error {
     return this.code === 'out_of_bounds';
   }
 
-  /** `true` for transient / retryable conditions: network errors, timeouts,
-   *  5xx, and 429. The transport layer relies on this for its retry policy. */
+  /** `true` for the SDK's retryable conditions: pure network errors, 5xx, and
+   *  429. Deliberately excludes `timeout` and `aborted` — those are caller-
+   *  observable terminal states, not transient. Aligned with `shouldRetryError`
+   *  in `retry.ts` so a consumer mirroring the SDK's retry policy gets the
+   *  same answer the transport does. */
   isTransient(): boolean {
-    if (this.status === STATUS_NETWORK_ERROR) return true;
+    if (this.code === 'network_error') return true;
     if (this.status >= 500 && this.status < 600) return true;
     return this.isRateLimited();
+  }
+
+  /** `true` when this error is a 409 / `conflict` (idempotency-key conflict
+   *  on retry). */
+  isConflict(): boolean {
+    return this.code === 'conflict';
   }
 
   // ─── Factory ─────────────────────────────────────────────────────────
@@ -359,6 +368,7 @@ function codeForStatus(status: number): ScorezillaErrorCode {
   if (status === 402) return 'usage_cap_exceeded';
   if (status === 403) return 'forbidden';
   if (status === 404) return 'not_found';
+  if (status === 409) return 'conflict';
   if (status === 422) return 'out_of_bounds';
   if (status === 429) return 'rate_limited';
   if (status >= 500) return 'internal_error';

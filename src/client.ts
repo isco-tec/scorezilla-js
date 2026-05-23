@@ -51,8 +51,21 @@ import { defaultUserAgent } from './user-agent';
 // detailed callout.
 // ---------------------------------------------------------------------------
 
+/** Caller-cancellable common shape. All public methods accept an
+ *  `AbortSignal` so framework consumers (Next.js route handlers, Hono,
+ *  Express request lifecycles, React effect cleanup) can propagate
+ *  cancellation through to the underlying `fetch`. The signal is wired
+ *  into the transport's per-attempt timeout composition — aborting the
+ *  caller signal cancels any in-flight retry. */
+export interface CancellableInput {
+  /** Optional `AbortSignal` to cancel the request mid-flight. The SDK
+   *  composes this with its per-attempt timeout, so aborting always wins
+   *  over the SDK's own timer. */
+  signal?: AbortSignal | undefined;
+}
+
 /** Input for {@link Scorezilla.submitScore}. */
-export interface SubmitScoreInput {
+export interface SubmitScoreInput extends CancellableInput {
   /** UUID-typed board identifier — issued by the operator dashboard. */
   boardId: string;
   /** The SDK accepts ONLY `playerId`. Pass your stable per-player identifier
@@ -68,7 +81,7 @@ export interface SubmitScoreInput {
 }
 
 /** Input for {@link Scorezilla.getLeaderboard}. */
-export interface GetLeaderboardInput {
+export interface GetLeaderboardInput extends CancellableInput {
   boardId: string;
   /** Number of entries to return. API caps at 1000; default 100. */
   top?: number | undefined;
@@ -77,13 +90,13 @@ export interface GetLeaderboardInput {
 }
 
 /** Input for {@link Scorezilla.getPlayerRank}. */
-export interface GetPlayerRankInput {
+export interface GetPlayerRankInput extends CancellableInput {
   boardId: string;
   playerId: string;
 }
 
 /** Input for {@link Scorezilla.getWindowAround}. */
-export interface GetWindowAroundInput {
+export interface GetWindowAroundInput extends CancellableInput {
   boardId: string;
   playerId: string;
   /** Entries strictly above the player. API caps at 100; default 5. */
@@ -244,6 +257,7 @@ export class Scorezilla {
       path: submitScorePath(input.boardId),
       method: 'POST',
       body,
+      signal: input.signal,
     });
   }
 
@@ -269,6 +283,7 @@ export class Scorezilla {
     return this.#request<ApiSuccess<LeaderboardResponse>>({
       path: getLeaderboardPath(input.boardId, q),
       method: 'GET',
+      signal: input.signal,
     });
   }
 
@@ -299,6 +314,7 @@ export class Scorezilla {
     return this.#request<ApiSuccess<PlayerRankResponse>>({
       path: getPlayerRankPath(input.boardId, input.playerId),
       method: 'GET',
+      signal: input.signal,
     });
   }
 
@@ -325,6 +341,7 @@ export class Scorezilla {
     return this.#request<ApiSuccess<WindowAroundResponse>>({
       path: getWindowAroundPath(input.boardId, input.playerId, q),
       method: 'GET',
+      signal: input.signal,
     });
   }
 
@@ -337,7 +354,7 @@ export class Scorezilla {
    * boilerplate-free and ensures every call shares identical defaults.
    */
   async #request<T extends { ok: true }>(
-    opts: Pick<RequestOptions, 'path' | 'method' | 'body'>,
+    opts: Pick<RequestOptions, 'path' | 'method' | 'body' | 'signal'>,
   ): Promise<T> {
     const headers: Record<string, string> = {
       Authorization: this.#authHeader,
@@ -356,6 +373,7 @@ export class Scorezilla {
       headers,
     };
     if (opts.body !== undefined) requestOpts.body = opts.body;
+    if (opts.signal !== undefined) requestOpts.signal = opts.signal;
     if (this.#config.fetch !== undefined) requestOpts.fetchImpl = this.#config.fetch;
     if (this.#config.timeoutMs !== undefined) requestOpts.timeoutMs = this.#config.timeoutMs;
     // Build the `retry` block only if at least one knob is set. Two
