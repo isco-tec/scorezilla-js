@@ -5,9 +5,9 @@
  * Retry delays are zeroed via a stubbed `sleepImpl` so the suite stays fast.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ScorezillaError } from '../../src/errors';
-import { request, type FetchImpl } from '../../src/transport';
+import { request, type FetchImpl, __resetDeprecationDedupe } from '../../src/transport';
 
 // A pass-through sleep that yields to the microtask queue but doesn't wait —
 // keeps the tests deterministic and instant.
@@ -689,5 +689,79 @@ describe('request — invalid_json on contract drift', () => {
       expect(e).toBeInstanceOf(ScorezillaError);
       expect((e as ScorezillaError).code).toBe('invalid_json');
     }
+  });
+});
+
+describe('PR R — Sunset / Deprecation header warning', () => {
+  // The transport observes RFC 8594 Sunset + IETF Deprecation headers
+  // on every 2xx response and logs a once-per-process warning so SDK
+  // consumers see deprecation signals during dev without spamming the
+  // console in prod loops.
+
+  afterEach(() => {
+    __resetDeprecationDedupe();
+    vi.restoreAllMocks();
+  });
+
+  it('emits a console.warn the FIRST time a Sunset header is observed', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse(
+        { ok: true, value: 1 },
+        {
+          headers: {
+            Deprecation: 'true',
+            Sunset: 'Sat, 22 Aug 2026 00:00:00 GMT',
+            Link: '<https://docs.scorezilla.dev/upgrade>; rel="deprecation"',
+          },
+        },
+      ),
+    ) as unknown as FetchImpl;
+    await request<{ ok: true; value: number }>({
+      baseUrl: 'https://api.example.com',
+      path: '/v1/x',
+      method: 'GET',
+      fetchImpl,
+      retry: { sleepImpl: instantSleep, maxRetries: 0 },
+    });
+    expect(warn).toHaveBeenCalledTimes(1);
+    const msg = warn.mock.calls[0]?.[0];
+    expect(msg).toContain('Sunset');
+    expect(msg).toContain('docs.scorezilla.dev/upgrade');
+  });
+
+  it('DOES NOT re-emit on subsequent identical responses (dedupe by signal)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse(
+        { ok: true, value: 1 },
+        { headers: { Deprecation: 'true', Sunset: 'Sat, 22 Aug 2026 00:00:00 GMT' } },
+      ),
+    ) as unknown as FetchImpl;
+    for (let i = 0; i < 5; i++) {
+      await request<{ ok: true; value: number }>({
+        baseUrl: 'https://api.example.com',
+        path: '/v1/x',
+        method: 'GET',
+        fetchImpl,
+        retry: { sleepImpl: instantSleep, maxRetries: 0 },
+      });
+    }
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT warn when no Sunset/Deprecation header is present', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ ok: true, value: 1 }),
+    ) as unknown as FetchImpl;
+    await request<{ ok: true; value: number }>({
+      baseUrl: 'https://api.example.com',
+      path: '/v1/x',
+      method: 'GET',
+      fetchImpl,
+      retry: { sleepImpl: instantSleep, maxRetries: 0 },
+    });
+    expect(warn).not.toHaveBeenCalled();
   });
 });

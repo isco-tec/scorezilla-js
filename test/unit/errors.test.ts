@@ -371,3 +371,69 @@ describe('ScorezillaError.from — preserves field truncation through the factor
     expect((e.reason as string).length).toBe(MESSAGE_MAX_CHARS);
   });
 });
+
+describe('PR R — usage_cap_exceeded (402) error shape', () => {
+  it('parses all cap fields from the 402 body and exposes typed predicates', () => {
+    const body: ApiError = {
+      ok: false,
+      error: 'usage_cap_exceeded',
+      reason: 'over_cap',
+      tier: 'free',
+      cap: 10000,
+      count: 10001,
+      period: '2026-05',
+      resetsAt: '2026-06-01T00:00:00.000Z',
+      message: 'Monthly cap exceeded',
+    };
+    const e = ScorezillaError.from({ status: 402, body });
+    expect(e.code).toBe('usage_cap_exceeded');
+    expect(e.isUsageCapExceeded()).toBe(true);
+    expect(e.isSuspended()).toBe(false);
+    expect(e.isRateLimited()).toBe(false);
+    expect(e.tier).toBe('free');
+    expect(e.cap).toBe(10000);
+    expect(e.count).toBe(10001);
+    expect(e.period).toBe('2026-05');
+    expect(e.resetsAt).toBe('2026-06-01T00:00:00.000Z');
+  });
+
+  it('distinguishes suspended (reason="suspended") from over-cap', () => {
+    const body: ApiError = {
+      ok: false,
+      error: 'usage_cap_exceeded',
+      reason: 'suspended',
+      tier: 'suspended',
+      cap: 0,
+      count: 1,
+      period: '2026-05',
+      resetsAt: '2026-06-01T00:00:00.000Z',
+      message: 'Tenant suspended',
+    };
+    const e = ScorezillaError.from({ status: 402, body });
+    expect(e.isUsageCapExceeded()).toBe(true);
+    expect(e.isSuspended()).toBe(true);
+  });
+
+  it('NOT classified as transient (no auto-retry on usage cap)', () => {
+    const body: ApiError = {
+      ok: false,
+      error: 'usage_cap_exceeded',
+      reason: 'over_cap',
+      tier: 'free',
+      cap: 10000,
+      count: 10001,
+      period: '2026-05',
+      resetsAt: '2026-06-01T00:00:00.000Z',
+    };
+    const e = ScorezillaError.from({ status: 402, body });
+    expect(e.isTransient()).toBe(false);
+  });
+
+  it('synthesizes usage_cap_exceeded from status alone when body is missing', () => {
+    const e = ScorezillaError.from({ status: 402 });
+    expect(e.code).toBe('usage_cap_exceeded');
+    expect(e.isUsageCapExceeded()).toBe(true);
+    expect(e.cap).toBeUndefined();
+    expect(e.resetsAt).toBeUndefined();
+  });
+});
