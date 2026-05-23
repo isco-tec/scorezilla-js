@@ -173,6 +173,11 @@ export async function request<T extends { ok: true }>(opts: RequestOptions): Pro
       const response = await fetchImpl(url, init);
 
       if (response.ok) {
+        // PR R: surface API-level deprecation signals (RFC 8594 Sunset +
+        // IETF draft Deprecation headers). The server emits these when
+        // a deprecated request shape is in use. We log a warning
+        // exactly once per SDK process per (code-path) to avoid spam.
+        warnOnDeprecationOnce(response);
         return await parseJson<T>(response);
       }
 
@@ -344,6 +349,53 @@ function readRetryAfter(response: Response): number | undefined {
   if (!raw) return undefined;
   const n = Number(raw);
   return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+
+/**
+ * PR R: emit a once-per-process warning when an API response carries
+ * the `Deprecation` header (per IETF draft) or a `Sunset` header
+ * (RFC 8594). The dedupe key is the (Deprecation + Sunset + Link)
+ * triplet, so different deprecation signals across the SDK lifetime
+ * each surface once but the SAME signal across many requests fires
+ * once.
+ *
+ * Quiet by design: this is a developer warning, not a runtime error.
+ * Production loops shouldn't see this unless the SDK is genuinely
+ * out-of-date.
+ */
+const seenDeprecations = new Set<string>();
+function warnOnDeprecationOnce(response: Response): void {
+  const deprecation = response.headers.get('Deprecation');
+  const sunset = response.headers.get('Sunset');
+  if (!deprecation && !sunset) return;
+  const link = response.headers.get('Link') ?? '';
+  const key = `${deprecation ?? ''}|${sunset ?? ''}|${link}`;
+  if (seenDeprecations.has(key)) return;
+  seenDeprecations.add(key);
+
+  const detail: string[] = [];
+  if (deprecation === 'true' || deprecation) detail.push(`Deprecation: ${deprecation}`);
+  if (sunset) detail.push(`Sunset: ${sunset}`);
+  if (link) {
+    // Pull the URL out of `<url>; rel="deprecation"` per RFC 8288.
+    const m = link.match(/<([^>]+)>/);
+    if (m) detail.push(`Docs: ${m[1]}`);
+  }
+  // eslint-disable-next-line no-console -- developer-facing warning, intentional
+  console.warn(
+    `[scorezilla-sdk] API responded with deprecation signal: ${detail.join(' · ')}. ` +
+      `Upgrade your SDK before the sunset date.`,
+  );
+}
+
+/**
+ * Test-only: clear the seen-deprecations dedupe set so unit tests can
+ * exercise the warn-once behavior across cases. Not exported from the
+ * public entry point; reachable only via the internal transport module
+ * from inside the package.
+ */
+export function __resetDeprecationDedupe(): void {
+  seenDeprecations.clear();
 }
 
 /**

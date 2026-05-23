@@ -35,10 +35,32 @@ export type ScorezillaErrorCode =
   | 'rate_limited'
   | 'conflict'
   | 'internal_error'
+  /** 402 Payment Required — tenant exceeded their monthly submission cap, OR
+   *  the tenant is `'suspended'` (see {@link UsageCapReason}). The error body
+   *  carries `tier`, `cap`, `count`, `period`, `resetsAt`. */
+  | 'usage_cap_exceeded'
   | (string & {});
 
 /** Reason sub-classifier on `out_of_bounds` errors. Open union — see {@link ScorezillaErrorCode}. */
 export type OutOfBoundsReason = 'below_min' | 'above_max' | (string & {});
+
+/** Reason sub-classifier on `usage_cap_exceeded` errors.
+ *  - `'over_cap'`   — tenant hit their tier's monthly submit limit
+ *  - `'suspended'`  — tenant's `billing_status` is `'suspended'`; every
+ *                     submit is rejected (cap is structurally 0)
+ *  Open union for forward compatibility.
+ */
+export type UsageCapReason = 'over_cap' | 'suspended' | (string & {});
+
+/** Tier identifier mirrored from the server's `PlanConfig.key`. */
+export type BillingTier =
+  | 'free'
+  | 'indie'
+  | 'pro'
+  | 'studio'
+  | 'enterprise'
+  | 'suspended'
+  | (string & {});
 
 /** Successful API response envelope. The `T` is the per-route payload. */
 export type ApiSuccess<T> = { ok: true } & T;
@@ -57,6 +79,22 @@ export interface ApiError {
   layer?: string;
   /** The limit value that was crossed — present on `out_of_bounds`. */
   bound?: number;
+  // ── Usage-cap fields (present on `usage_cap_exceeded`) ────────────────
+  /** Tenant's tier at the time of rejection. */
+  tier?: BillingTier;
+  /** The cap value that was crossed (monthly submit limit). `0` for
+   *  suspended tenants; `null` is never sent (enterprise has no cap and
+   *  can never be over). */
+  cap?: number;
+  /** The post-increment submit count when the cap was crossed. Always
+   *  > `cap` when `reason === 'over_cap'`. */
+  count?: number;
+  /** The period the count belongs to, in `YYYY-MM` UTC form. */
+  period?: string;
+  /** ISO-8601 timestamp of midnight UTC on the 1st of the next month —
+   *  when the counter resets. Lets clients compute `Retry-After` without
+   *  parsing dates server-side. */
+  resetsAt?: string;
 }
 
 /** Discriminated envelope: every API response is one of these two shapes. */

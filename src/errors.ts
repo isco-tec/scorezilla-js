@@ -11,7 +11,13 @@
  * minor release MAY reword any message. Machine logic that depends on
  * message text will break silently across upgrades.
  */
-import type { ApiError, OutOfBoundsReason, ScorezillaErrorCode } from './types';
+import type {
+  ApiError,
+  BillingTier,
+  OutOfBoundsReason,
+  ScorezillaErrorCode,
+  UsageCapReason,
+} from './types';
 
 /** Maximum length, in characters, that an error `message` may hold.
  *
@@ -113,9 +119,11 @@ export class ScorezillaError extends Error {
    *  for aborts, `'aborted'`; for timeouts, `'timeout'`. */
   readonly code: ScorezillaErrorCode;
 
-  /** Sub-classifier — present on `out_of_bounds` (`'below_min' | 'above_max'`)
+  /** Sub-classifier — present on:
+   *    - `out_of_bounds`: `'below_min' | 'above_max'`
+   *    - `usage_cap_exceeded`: `'over_cap' | 'suspended'`
    *  and possibly other codes in future minor releases. */
-  readonly reason: OutOfBoundsReason | string | undefined;
+  readonly reason: OutOfBoundsReason | UsageCapReason | string | undefined;
 
   /** Seconds — present on `rate_limited`. Honored by the transport's retry
    *  policy (Step 2.4). */
@@ -130,6 +138,25 @@ export class ScorezillaError extends Error {
 
   /** Which rate-limit layer fired on `rate_limited`. */
   readonly layer: string | undefined;
+
+  /** Tenant's billing tier — present on `usage_cap_exceeded`. */
+  readonly tier: BillingTier | undefined;
+
+  /** The cap value crossed on `usage_cap_exceeded`. `0` indicates a
+   *  suspended tenant. `undefined` on all other error codes. */
+  readonly cap: number | undefined;
+
+  /** The post-increment submit count on `usage_cap_exceeded`. Always
+   *  `> cap` when `reason === 'over_cap'`. */
+  readonly count: number | undefined;
+
+  /** The period the count belongs to on `usage_cap_exceeded`, in `YYYY-MM`
+   *  UTC form. */
+  readonly period: string | undefined;
+
+  /** ISO-8601 timestamp of midnight UTC on the 1st of the next month —
+   *  the counter's natural reset point on `usage_cap_exceeded`. */
+  readonly resetsAt: string | undefined;
 
   /** The underlying cause (e.g., a `TypeError: fetch failed`) for
    *  network/abort/timeout paths. `undefined` when the error came from a
@@ -146,6 +173,11 @@ export class ScorezillaError extends Error {
       requestId?: string | undefined;
       bound?: number | undefined;
       layer?: string | undefined;
+      tier?: BillingTier | undefined;
+      cap?: number | undefined;
+      count?: number | undefined;
+      period?: string | undefined;
+      resetsAt?: string | undefined;
       cause?: unknown;
     },
   ) {
@@ -164,6 +196,14 @@ export class ScorezillaError extends Error {
     this.requestId = truncateField(init.requestId);
     this.bound = init.bound;
     this.layer = truncateField(init.layer);
+    // Usage-cap fields. `tier` is a short enum-like string; field-trunc
+    // is defense-in-depth in case the server ever leaks a longer value
+    // through. The numeric fields don't need truncation.
+    this.tier = truncateField(init.tier) as BillingTier | undefined;
+    this.cap = init.cap;
+    this.count = init.count;
+    this.period = truncateField(init.period);
+    this.resetsAt = truncateField(init.resetsAt);
     this.cause = init.cause;
 
     // Cross-realm instanceof: explicitly set the prototype. Without this,
@@ -193,6 +233,24 @@ export class ScorezillaError extends Error {
   /** `true` when this error is a 429 / `rate_limited`. */
   isRateLimited(): boolean {
     return this.code === 'rate_limited';
+  }
+
+  /**
+   * `true` when this error is a 402 / `usage_cap_exceeded`. The tenant
+   * has either hit their tier's monthly submit cap (`reason ===
+   * 'over_cap'`) or is suspended (`reason === 'suspended'`).
+   *
+   * Consumers SHOULD NOT auto-retry on this error — the cap doesn't lift
+   * until `resetsAt`. Surface to the developer with an upgrade prompt
+   * (over_cap) or contact-support message (suspended).
+   */
+  isUsageCapExceeded(): boolean {
+    return this.code === 'usage_cap_exceeded';
+  }
+
+  /** `true` when this error is a 402 + reason 'suspended' (vs over-cap). */
+  isSuspended(): boolean {
+    return this.code === 'usage_cap_exceeded' && this.reason === 'suspended';
   }
 
   /** `true` when this error is a 401 / `unauthorized` (or 403 / `forbidden`). */
@@ -243,6 +301,13 @@ export class ScorezillaError extends Error {
         retryAfter: body.retryAfter,
         bound: body.bound,
         layer: body.layer,
+        // Usage-cap fields from `ApiError` (populated by the server on
+        // 402 responses; undefined on other errors).
+        tier: body.tier,
+        cap: body.cap,
+        count: body.count,
+        period: body.period,
+        resetsAt: body.resetsAt,
         requestId,
         cause,
       });
@@ -291,6 +356,7 @@ export class ScorezillaError extends Error {
 /** Default `code` for a given HTTP status when the body didn't parse as ApiError. */
 function codeForStatus(status: number): ScorezillaErrorCode {
   if (status === 401) return 'unauthorized';
+  if (status === 402) return 'usage_cap_exceeded';
   if (status === 403) return 'forbidden';
   if (status === 404) return 'not_found';
   if (status === 422) return 'out_of_bounds';
