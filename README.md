@@ -43,6 +43,19 @@ yarn add scorezilla
 bun add scorezilla
 ```
 
+## Get your keys
+
+The Quickstart below needs two values: a `publicKey` and a `boardId`. Both come from the dashboard:
+
+1. **Sign in** at [dashboard.scorezilla.dev](https://dashboard.scorezilla.dev) (magic-link email — no password).
+2. **Open the Tutorial Game** that's created for you on first sign-in (or create a new game).
+3. **Open Keys → Issue public key**. Copy the `pk_*` string (shown once — also visible in the keys list afterwards).
+4. **Open Boards → New board** (or use the auto-created "High Scores"). Copy the `boardId` UUID.
+
+You're now ready for the Quickstart below. **Public keys are safe to ship in client code** — they only authorize submits, not key rotation or board admin.
+
+> Using AI to scaffold? Skip the manual steps: install the [Scorezilla MCP server](https://github.com/isco-tec/scorezilla-mcp) in Claude Code / Cursor and run `bootstrap_leaderboard` — the AI gets your keys + board id + a ready-to-paste integration snippet in one tool call.
+
 ## Quickstart
 
 ```ts
