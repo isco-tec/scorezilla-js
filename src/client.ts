@@ -51,8 +51,21 @@ import { defaultUserAgent } from './user-agent';
 // detailed callout.
 // ---------------------------------------------------------------------------
 
+/** Caller-cancellable common shape. All public methods accept an
+ *  `AbortSignal` so framework consumers (Next.js route handlers, Hono,
+ *  Express request lifecycles, React effect cleanup) can propagate
+ *  cancellation through to the underlying `fetch`. The signal is wired
+ *  into the transport's per-attempt timeout composition — aborting the
+ *  caller signal cancels any in-flight retry. */
+export interface CancellableInput {
+  /** Optional `AbortSignal` to cancel the request mid-flight. The SDK
+   *  composes this with its per-attempt timeout, so aborting always wins
+   *  over the SDK's own timer. */
+  signal?: AbortSignal | undefined;
+}
+
 /** Input for {@link Scorezilla.submitScore}. */
-export interface SubmitScoreInput {
+export interface SubmitScoreInput extends CancellableInput {
   /** UUID-typed board identifier — issued by the operator dashboard. */
   boardId: string;
   /** The SDK accepts ONLY `playerId`. Pass your stable per-player identifier
@@ -68,7 +81,7 @@ export interface SubmitScoreInput {
 }
 
 /** Input for {@link Scorezilla.getLeaderboard}. */
-export interface GetLeaderboardInput {
+export interface GetLeaderboardInput extends CancellableInput {
   boardId: string;
   /** Number of entries to return. API caps at 1000; default 100. */
   top?: number | undefined;
@@ -77,13 +90,13 @@ export interface GetLeaderboardInput {
 }
 
 /** Input for {@link Scorezilla.getPlayerRank}. */
-export interface GetPlayerRankInput {
+export interface GetPlayerRankInput extends CancellableInput {
   boardId: string;
   playerId: string;
 }
 
 /** Input for {@link Scorezilla.getWindowAround}. */
-export interface GetWindowAroundInput {
+export interface GetWindowAroundInput extends CancellableInput {
   boardId: string;
   playerId: string;
   /** Entries strictly above the player. API caps at 100; default 5. */
@@ -100,15 +113,16 @@ export interface GetWindowAroundInput {
 //   1. Structural — functions, symbols, circular refs aren't serializable.
 //   2. Size — JSON.stringify result exceeds 4 KB UTF-8 bytes.
 //
-// Returns the serialized JSON so callers don't pay the JSON.stringify cost
-// twice. (The transport JSON-stringifies the full body later — the duplication
-// is small and the test ergonomics are worth it.)
+// Returns the canonicalized JSON string the validator produced. Callers
+// that pass it through to the transport avoid a second JSON.stringify on
+// the same object — meaningful for submit hot paths in high-frequency
+// games. Tests can assert on the string directly.
 // ---------------------------------------------------------------------------
 
 /** Maximum size, in UTF-8 bytes, of a metadata payload. */
 export const METADATA_MAX_BYTES = 4096;
 
-function validateMetadata(metadata: Record<string, unknown>): void {
+function validateMetadata(metadata: Record<string, unknown>): string {
   if (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata)) {
     throw new Error(
       'scorezilla: metadata must be a plain object (got ' +
@@ -155,6 +169,7 @@ function validateMetadata(metadata: Record<string, unknown>): void {
       `scorezilla: metadata exceeds ${METADATA_MAX_BYTES} bytes (got ${byteLength} bytes when JSON-stringified)`,
     );
   }
+  return serialized;
 }
 
 // ---------------------------------------------------------------------------
@@ -244,6 +259,7 @@ export class Scorezilla {
       path: submitScorePath(input.boardId),
       method: 'POST',
       body,
+      signal: input.signal,
     });
   }
 
@@ -269,6 +285,7 @@ export class Scorezilla {
     return this.#request<ApiSuccess<LeaderboardResponse>>({
       path: getLeaderboardPath(input.boardId, q),
       method: 'GET',
+      signal: input.signal,
     });
   }
 
@@ -299,6 +316,7 @@ export class Scorezilla {
     return this.#request<ApiSuccess<PlayerRankResponse>>({
       path: getPlayerRankPath(input.boardId, input.playerId),
       method: 'GET',
+      signal: input.signal,
     });
   }
 
@@ -325,6 +343,7 @@ export class Scorezilla {
     return this.#request<ApiSuccess<WindowAroundResponse>>({
       path: getWindowAroundPath(input.boardId, input.playerId, q),
       method: 'GET',
+      signal: input.signal,
     });
   }
 
@@ -337,7 +356,7 @@ export class Scorezilla {
    * boilerplate-free and ensures every call shares identical defaults.
    */
   async #request<T extends { ok: true }>(
-    opts: Pick<RequestOptions, 'path' | 'method' | 'body'>,
+    opts: Pick<RequestOptions, 'path' | 'method' | 'body' | 'signal'>,
   ): Promise<T> {
     const headers: Record<string, string> = {
       Authorization: this.#authHeader,
@@ -356,7 +375,9 @@ export class Scorezilla {
       headers,
     };
     if (opts.body !== undefined) requestOpts.body = opts.body;
+    if (opts.signal !== undefined) requestOpts.signal = opts.signal;
     if (this.#config.fetch !== undefined) requestOpts.fetchImpl = this.#config.fetch;
+    if (this.#config.warn !== undefined) requestOpts.warnImpl = this.#config.warn;
     if (this.#config.timeoutMs !== undefined) requestOpts.timeoutMs = this.#config.timeoutMs;
     // Build the `retry` block only if at least one knob is set. Two
     // distinct config options (`maxRetries`, `sleepImpl`) collapse into

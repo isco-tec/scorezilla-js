@@ -48,6 +48,13 @@ export interface BaseConfig {
    *  this unset to use the default exponential backoff with jitter.
    *  @internal */
   sleepImpl?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  /** Inject a sink for SDK deprecation warnings. Defaults to
+   *  `console.warn`. Pass your logger's `warn` to route SDK signals into
+   *  the rest of your observability stack, or pass `() => {}` to
+   *  suppress them. The SDK uses this ONLY for developer-visible
+   *  deprecation notices triggered by `Deprecation` / `Sunset` response
+   *  headers — never for runtime errors. */
+  warn?: (...args: unknown[]) => void;
 }
 
 /** Public-key auth: browser-safe path. The key is fingerprinted to a game
@@ -85,6 +92,7 @@ export interface ResolvedConfig {
   readonly timeoutMs: number | undefined;
   readonly maxRetries: number | undefined;
   readonly sleepImpl: ((ms: number, signal?: AbortSignal) => Promise<void>) | undefined;
+  readonly warn: ((...args: unknown[]) => void) | undefined;
   readonly userAgent: string | undefined;
   readonly auth:
     | { kind: 'public'; key: string }
@@ -133,6 +141,7 @@ export function validateConfig(cfg: ScorezillaConfig): ResolvedConfig {
     timeoutMs: cfg.timeoutMs,
     maxRetries: cfg.maxRetries,
     sleepImpl: cfg.sleepImpl,
+    warn: cfg.warn,
     userAgent: cfg.userAgent,
     auth,
   };

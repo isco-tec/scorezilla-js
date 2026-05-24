@@ -67,8 +67,15 @@ import { defaultUserAgent } from './user-agent';
 // consumers of this entry point shouldn't need to import from
 // `scorezilla` core to get types.
 
+/** Caller-cancellable common shape — server-side too. */
+export interface CancellableInput {
+  /** Optional `AbortSignal` to cancel mid-flight. The transport composes
+   *  it with the per-attempt timeout, so aborting always wins. */
+  signal?: AbortSignal | undefined;
+}
+
 /** Input for {@link Scorezilla.submitScore}. */
-export interface SubmitScoreInput {
+export interface SubmitScoreInput extends CancellableInput {
   /** UUID-typed board identifier — issued by the operator dashboard. */
   boardId: string;
   /** Stable per-player identifier (UUID, your account ID, etc.). Avoid PII. */
@@ -81,7 +88,7 @@ export interface SubmitScoreInput {
 }
 
 /** Input for {@link Scorezilla.getLeaderboard}. */
-export interface GetLeaderboardInput {
+export interface GetLeaderboardInput extends CancellableInput {
   boardId: string;
   /** Number of entries (API caps at 1000; default 100). */
   top?: number | undefined;
@@ -90,13 +97,13 @@ export interface GetLeaderboardInput {
 }
 
 /** Input for {@link Scorezilla.getPlayerRank}. */
-export interface GetPlayerRankInput {
+export interface GetPlayerRankInput extends CancellableInput {
   boardId: string;
   playerId: string;
 }
 
 /** Input for {@link Scorezilla.getWindowAround}. */
-export interface GetWindowAroundInput {
+export interface GetWindowAroundInput extends CancellableInput {
   boardId: string;
   playerId: string;
   /** Entries strictly above the player (API caps at 100; default 5). */
@@ -159,6 +166,7 @@ export class Scorezilla {
   readonly #timeoutMs: number | undefined;
   readonly #maxRetries: number | undefined;
   readonly #sleepImpl: ((ms: number, signal?: AbortSignal) => Promise<void>) | undefined;
+  readonly #warnImpl: ((...args: unknown[]) => void) | undefined;
   readonly #userAgent: string;
 
   constructor(config: SecretKeyConfig) {
@@ -205,6 +213,7 @@ export class Scorezilla {
     this.#timeoutMs = config.timeoutMs;
     this.#maxRetries = config.maxRetries;
     this.#sleepImpl = config.sleepImpl;
+    this.#warnImpl = config.warn;
     this.#userAgent = config.userAgent ?? defaultUserAgent(Scorezilla.version);
   }
 
@@ -231,6 +240,7 @@ export class Scorezilla {
         score: input.score,
         ...(input.metadata !== undefined ? { metadata: input.metadata } : {}),
       },
+      signal: input.signal,
     });
   }
 
@@ -242,6 +252,7 @@ export class Scorezilla {
         ...(input.offset !== undefined ? { offset: input.offset } : {}),
       }),
       method: 'GET',
+      signal: input.signal,
     });
   }
 
@@ -250,6 +261,7 @@ export class Scorezilla {
     return this.#request<ApiSuccess<PlayerRankResponse>>({
       path: getPlayerRankPath(input.boardId, input.playerId),
       method: 'GET',
+      signal: input.signal,
     });
   }
 
@@ -261,6 +273,7 @@ export class Scorezilla {
         ...(input.after !== undefined ? { after: input.after } : {}),
       }),
       method: 'GET',
+      signal: input.signal,
     });
   }
 
@@ -271,7 +284,7 @@ export class Scorezilla {
    * KV) requires this.
    */
   async #request<T extends { ok: true }>(
-    opts: Pick<RequestOptions, 'path' | 'method' | 'body'>,
+    opts: Pick<RequestOptions, 'path' | 'method' | 'body' | 'signal'>,
   ): Promise<T> {
     const baseHeaders: Record<string, string> = {
       // User-Agent: useful in Node/Bun/Deno/Workers for server observability.
@@ -296,7 +309,9 @@ export class Scorezilla {
         }),
     };
     if (opts.body !== undefined) requestOpts.body = opts.body;
+    if (opts.signal !== undefined) requestOpts.signal = opts.signal;
     if (this.#fetchImpl !== undefined) requestOpts.fetchImpl = this.#fetchImpl;
+    if (this.#warnImpl !== undefined) requestOpts.warnImpl = this.#warnImpl;
     if (this.#timeoutMs !== undefined) requestOpts.timeoutMs = this.#timeoutMs;
     if (this.#maxRetries !== undefined || this.#sleepImpl !== undefined) {
       requestOpts.retry = {

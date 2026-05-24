@@ -63,6 +63,15 @@ export interface RequestOptions {
     | undefined;
   /** Injectable fetch — defaults to `globalThis.fetch`. */
   fetchImpl?: FetchImpl | undefined;
+  /** Injectable warn sink for deprecation notices. Defaults to
+   *  `console.warn`. Pass a function to route SDK warnings into your
+   *  logger of choice, or pass `() => {}` to suppress them entirely.
+   *  At million-integration scale, embedders shouldn't have to
+   *  console-filter our deprecation messages.
+   *
+   *  Same signature as `console.warn`. The SDK never calls
+   *  `warnImpl` for anything other than developer-visible deprecations. */
+  warnImpl?: ((...args: unknown[]) => void) | undefined;
   /** Caller-supplied AbortSignal — composed with the SDK's internal timeout signal. */
   signal?: AbortSignal | undefined;
   /** Per-request timeout in milliseconds. Defaults to {@link DEFAULT_TIMEOUT_MS}. */
@@ -177,7 +186,7 @@ export async function request<T extends { ok: true }>(opts: RequestOptions): Pro
         // IETF draft Deprecation headers). The server emits these when
         // a deprecated request shape is in use. We log a warning
         // exactly once per SDK process per (code-path) to avoid spam.
-        warnOnDeprecationOnce(response);
+        warnOnDeprecationOnce(response, opts.warnImpl);
         return await parseJson<T>(response);
       }
 
@@ -364,7 +373,7 @@ function readRetryAfter(response: Response): number | undefined {
  * out-of-date.
  */
 const seenDeprecations = new Set<string>();
-function warnOnDeprecationOnce(response: Response): void {
+function warnOnDeprecationOnce(response: Response, warnImpl?: (...args: unknown[]) => void): void {
   const deprecation = response.headers.get('Deprecation');
   const sunset = response.headers.get('Sunset');
   if (!deprecation && !sunset) return;
@@ -381,11 +390,16 @@ function warnOnDeprecationOnce(response: Response): void {
     const m = link.match(/<([^>]+)>/);
     if (m) detail.push(`Docs: ${m[1]}`);
   }
-  // eslint-disable-next-line no-console -- developer-facing warning, intentional
-  console.warn(
+  const message =
     `[scorezilla-sdk] API responded with deprecation signal: ${detail.join(' · ')}. ` +
-      `Upgrade your SDK before the sunset date.`,
-  );
+    `Upgrade your SDK before the sunset date.`;
+  // Inject point — embedders can route via warnImpl or suppress with `() => {}`.
+  if (warnImpl) {
+    warnImpl(message);
+  } else {
+    // eslint-disable-next-line no-console -- developer-facing warning, intentional
+    console.warn(message);
+  }
 }
 
 /**

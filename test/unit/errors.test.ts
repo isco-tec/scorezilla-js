@@ -267,9 +267,8 @@ describe('ScorezillaError — discriminator helpers', () => {
     ).toBe(false);
   });
 
-  it('isTransient() flags network/timeout/5xx/429', () => {
+  it('isTransient() flags only the conditions the SDK itself retries: network_error / 5xx / 429', () => {
     expect(ScorezillaError.network('x', null).isTransient()).toBe(true);
-    expect(ScorezillaError.timeout(1).isTransient()).toBe(true);
     expect(
       new ScorezillaError('', {
         status: 502,
@@ -289,6 +288,21 @@ describe('ScorezillaError — discriminator helpers', () => {
       }).isTransient(),
     ).toBe(false);
     expect(new ScorezillaError('', { status: 404, code: 'not_found' }).isTransient()).toBe(false);
+  });
+
+  it('isTransient() does NOT flag timeout or aborted — those are terminal, not retryable', () => {
+    // The SDK transport (see retry.ts:shouldRetryError) does not retry on
+    // timeout or aborted. `isTransient()` is aligned with that policy so
+    // consumers writing their own retry loop don't loop on terminal states.
+    expect(ScorezillaError.timeout(1).isTransient()).toBe(false);
+    expect(ScorezillaError.aborted(null).isTransient()).toBe(false);
+  });
+
+  it('isConflict() flags 409 conflicts (idempotency-key replay on a different body)', () => {
+    expect(new ScorezillaError('', { status: 409, code: 'conflict' }).isConflict()).toBe(true);
+    expect(new ScorezillaError('', { status: 400, code: 'invalid_input' }).isConflict()).toBe(
+      false,
+    );
   });
 });
 
