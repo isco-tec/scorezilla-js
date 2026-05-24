@@ -113,15 +113,16 @@ export interface GetWindowAroundInput extends CancellableInput {
 //   1. Structural — functions, symbols, circular refs aren't serializable.
 //   2. Size — JSON.stringify result exceeds 4 KB UTF-8 bytes.
 //
-// Returns the serialized JSON so callers don't pay the JSON.stringify cost
-// twice. (The transport JSON-stringifies the full body later — the duplication
-// is small and the test ergonomics are worth it.)
+// Returns the canonicalized JSON string the validator produced. Callers
+// that pass it through to the transport avoid a second JSON.stringify on
+// the same object — meaningful for submit hot paths in high-frequency
+// games. Tests can assert on the string directly.
 // ---------------------------------------------------------------------------
 
 /** Maximum size, in UTF-8 bytes, of a metadata payload. */
 export const METADATA_MAX_BYTES = 4096;
 
-function validateMetadata(metadata: Record<string, unknown>): void {
+function validateMetadata(metadata: Record<string, unknown>): string {
   if (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata)) {
     throw new Error(
       'scorezilla: metadata must be a plain object (got ' +
@@ -168,6 +169,7 @@ function validateMetadata(metadata: Record<string, unknown>): void {
       `scorezilla: metadata exceeds ${METADATA_MAX_BYTES} bytes (got ${byteLength} bytes when JSON-stringified)`,
     );
   }
+  return serialized;
 }
 
 // ---------------------------------------------------------------------------
@@ -375,6 +377,7 @@ export class Scorezilla {
     if (opts.body !== undefined) requestOpts.body = opts.body;
     if (opts.signal !== undefined) requestOpts.signal = opts.signal;
     if (this.#config.fetch !== undefined) requestOpts.fetchImpl = this.#config.fetch;
+    if (this.#config.warn !== undefined) requestOpts.warnImpl = this.#config.warn;
     if (this.#config.timeoutMs !== undefined) requestOpts.timeoutMs = this.#config.timeoutMs;
     // Build the `retry` block only if at least one knob is set. Two
     // distinct config options (`maxRetries`, `sleepImpl`) collapse into

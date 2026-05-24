@@ -299,12 +299,10 @@ describe('ScorezillaError — discriminator helpers', () => {
   });
 
   it('isConflict() flags 409 conflicts (idempotency-key replay on a different body)', () => {
-    expect(
-      new ScorezillaError('', { status: 409, code: 'conflict' }).isConflict(),
-    ).toBe(true);
-    expect(
-      new ScorezillaError('', { status: 400, code: 'invalid_input' }).isConflict(),
-    ).toBe(false);
+    expect(new ScorezillaError('', { status: 409, code: 'conflict' }).isConflict()).toBe(true);
+    expect(new ScorezillaError('', { status: 400, code: 'invalid_input' }).isConflict()).toBe(
+      false,
+    );
   });
 });
 
