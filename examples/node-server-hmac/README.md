@@ -35,12 +35,12 @@ import { Scorezilla, ScorezillaError } from 'scorezilla/server';
 
 ## Env vars
 
-| Var | Required | Default |
-|---|---|---|
-| `SCOREZILLA_SECRET_KEY` | yes | — (format: `sk_live_<keyId>_<random>`) |
-| `BOARD_ID` | yes | — |
-| `PLAYER_ID` | no | `alice` |
-| `SCOREZILLA_BASE_URL` | no | `https://api.scorezilla.dev` |
+| Var                     | Required | Default                                |
+| ----------------------- | -------- | -------------------------------------- |
+| `SCOREZILLA_SECRET_KEY` | yes      | — (format: `sk_live_<keyId>_<random>`) |
+| `BOARD_ID`              | yes      | —                                      |
+| `PLAYER_ID`             | no       | `alice`                                |
+| `SCOREZILLA_BASE_URL`   | no       | `https://api.scorezilla.dev`           |
 
 ## Where to get the keys
 

@@ -34,12 +34,12 @@ import { Scorezilla, ScorezillaError } from 'scorezilla';
 
 ## Env vars
 
-| Var | Required | Default |
-|---|---|---|
-| `SCOREZILLA_PUBLIC_KEY` | yes | — |
-| `BOARD_ID` | yes | — |
-| `PLAYER_ID` | no | `alice` |
-| `SCOREZILLA_BASE_URL` | no | `https://api.scorezilla.dev` |
+| Var                     | Required | Default                      |
+| ----------------------- | -------- | ---------------------------- |
+| `SCOREZILLA_PUBLIC_KEY` | yes      | —                            |
+| `BOARD_ID`              | yes      | —                            |
+| `PLAYER_ID`             | no       | `alice`                      |
+| `SCOREZILLA_BASE_URL`   | no       | `https://api.scorezilla.dev` |
 
 ## Where to get the keys
 
