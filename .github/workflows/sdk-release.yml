@@ -249,3 +249,38 @@ jobs:
           echo "  → ${name}@${version} installs cleanly and exports the expected surface"
           cd - > /dev/null
           rm -rf "$tmp"
+
+      # ─── Notify the scorezilla repo of the new release so its marketing
+      # ─── SSoT (apps/marketing/src/data/sdk.ts) auto-syncs. The receiver
+      # ─── opens an auto-PR with the version + dist-tag bump.
+      # ─── Receiver workflow:
+      # ─── isco-tec/scorezilla/.github/workflows/sdk-version-sync.yml
+      # ─── Setup:
+      # ─── isco-tec/scorezilla/blob/main/docs/cross-repo-sdk-sync.md
+      - name: Notify scorezilla repo of new release
+        if: steps.changesets.outputs.published_name == 'scorezilla' && steps.changesets.outputs.published_version != ''
+        env:
+          PUBLISHED_VERSION: ${{ steps.changesets.outputs.published_version }}
+          GH_TOKEN: ${{ secrets.SCOREZILLA_REPO_DISPATCH_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::warning::SCOREZILLA_REPO_DISPATCH_TOKEN not set; skipping marketing auto-sync."
+            echo "  → T4 of the version-drift guardrail is a no-op until the secret is added."
+            echo "  → Setup steps: https://github.com/isco-tec/scorezilla/blob/main/docs/cross-repo-sdk-sync.md"
+            exit 0
+          fi
+          # Detect dist-tag from the version string. Prereleases (anything
+          # with a `-suffix`) ship on `next`; stable releases on `latest`.
+          distTag="latest"
+          if [[ "$PUBLISHED_VERSION" == *"-"* ]]; then
+            distTag="next"
+          fi
+          releaseUrl="https://github.com/isco-tec/scorezilla-js/releases/tag/scorezilla@$PUBLISHED_VERSION"
+          gh api repos/isco-tec/scorezilla/dispatches \
+            -f event_type=sdk-published \
+            -f "client_payload[version]=$PUBLISHED_VERSION" \
+            -f "client_payload[distTag]=$distTag" \
+            -f "client_payload[releaseUrl]=$releaseUrl"
+          echo "  → dispatched sdk-published event to isco-tec/scorezilla"
+          echo "  → receiver opens auto-PR within ~30s; merge to deploy"
