@@ -17,11 +17,14 @@
  * -----------------------------------------
  * The method shape is intentionally identical — `submitScore`,
  * `getLeaderboard`, `getPlayerRank`, `getWindowAround`. The only
- * difference at the call site is the constructor argument:
+ * difference at the call site is the constructor argument: a single
+ * `sk_live_<keyId>_<random>` token replaces the public key (Stripe-
+ * style single-token format; the keyId is embedded in the plaintext
+ * so consumers manage one value, not two):
  *
  *   import { Scorezilla } from 'scorezilla/server';
  *   const sz = new Scorezilla({
- *     secretKey: { id: 'sk-id-abc', secret: 'sk_live_…' },
+ *     secretKey: process.env.SCOREZILLA_SECRET_KEY!, // sk_live_<keyId>_<random>
  *   });
  *
  * Behind the scenes:
@@ -129,10 +132,7 @@ export interface GetWindowAroundInput extends CancellableInput {
  * import { Scorezilla, ScorezillaError } from 'scorezilla/server';
  *
  * const sz = new Scorezilla({
- *   secretKey: {
- *     id:     process.env.SCOREZILLA_KEY_ID!,
- *     secret: process.env.SCOREZILLA_KEY_SECRET!,
- *   },
+ *   secretKey: process.env.SCOREZILLA_SECRET_KEY!, // sk_live_<keyId>_<random>
  * });
  *
  * try {
