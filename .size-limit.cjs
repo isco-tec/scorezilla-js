@@ -55,4 +55,14 @@ module.exports = [
     gzip: true,
     brotli: false,
   },
+  {
+    name: 'ESM — `scorezilla/identity` (preset helpers)',
+    path: 'dist/identity.js',
+    import: '*',
+    // No deps, pure helpers; budget intentionally tight. Bumps need
+    // a real reason (e.g. OAuth provider code shipping in 0.3.x).
+    limit: '2 KB',
+    gzip: true,
+    brotli: false,
+  },
 ];
