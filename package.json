@@ -102,6 +102,9 @@
       ],
       "phaser": [
         "./dist/phaser.d.ts"
+      ],
+      "identity": [
+        "./dist/identity.d.ts"
       ]
     }
   },
