@@ -30,6 +30,7 @@ export default defineConfig({
     server: 'src/server.ts',
     react: 'src/react.ts',
     phaser: 'src/phaser.ts',
+    identity: 'src/identity.ts',
     'server-browser-stub': 'src/server-browser-stub.ts',
   },
   format: ['esm', 'cjs'],

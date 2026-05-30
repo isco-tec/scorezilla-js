@@ -70,6 +70,16 @@
         "default": "./dist/react.cjs"
       }
     },
+    "./identity": {
+      "import": {
+        "types": "./dist/identity.d.ts",
+        "default": "./dist/identity.js"
+      },
+      "require": {
+        "types": "./dist/identity.d.cts",
+        "default": "./dist/identity.cjs"
+      }
+    },
     "./phaser": {
       "import": {
         "types": "./dist/phaser.d.ts",
