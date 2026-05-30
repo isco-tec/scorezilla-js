@@ -238,13 +238,11 @@ export function useServerAuthoritative(): ServerAuthoritativeMarker {
  * @since 0.3.0
  * @stability preview
  */
-export function useAuthProvider(_options: {
-  readonly provider: 'google' | 'github';
-}): never {
+export function useAuthProvider(_options: { readonly provider: 'google' | 'github' }): never {
   throw new Error(
     'useAuthProvider is not yet implemented in this 0.3.0-next preview. ' +
       'OAuth provider helpers (Google + GitHub for v1) ship in a follow-up ' +
-      "release on the `next` dist-tag. Until then, drive your own OAuth flow " +
+      'release on the `next` dist-tag. Until then, drive your own OAuth flow ' +
       'and pass the resulting user identifier to submitScore directly.',
   );
 }

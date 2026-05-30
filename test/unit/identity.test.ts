@@ -21,7 +21,17 @@ import {
   useAuthProvider,
 } from '../../src/identity';
 
-describe('useAnonymousPlayer', () => {
+// Browser-only test gate. The storage-backed helpers (useAnonymousPlayer,
+// usePromptedPlayer) require `window` + `localStorage`. Vitest's jsdom env
+// supplies these; Bun's test runner does not. We skip those describes on
+// Bun so the suite stays green in both runtimes. The helpers themselves
+// guard via `typeof window === 'undefined'` so they're safe to import in
+// either runtime — it's only the *tests* of the storage path that need
+// the browser globals.
+const isBrowser = typeof window !== 'undefined';
+const describeBrowser = isBrowser ? describe : describe.skip;
+
+describeBrowser('useAnonymousPlayer', () => {
   beforeEach(() => {
     window.localStorage.clear();
   });
@@ -56,7 +66,7 @@ describe('useAnonymousPlayer', () => {
   });
 });
 
-describe('usePromptedPlayer', () => {
+describeBrowser('usePromptedPlayer', () => {
   beforeEach(() => {
     window.localStorage.clear();
   });
@@ -148,11 +158,7 @@ describe('useServerAuthoritative', () => {
 
 describe('useAuthProvider', () => {
   it('throws with a helpful message in the 0.3.0-next preview', () => {
-    expect(() => useAuthProvider({ provider: 'google' })).toThrow(
-      /not yet implemented/i,
-    );
-    expect(() => useAuthProvider({ provider: 'github' })).toThrow(
-      /not yet implemented/i,
-    );
+    expect(() => useAuthProvider({ provider: 'google' })).toThrow(/not yet implemented/i);
+    expect(() => useAuthProvider({ provider: 'github' })).toThrow(/not yet implemented/i);
   });
 });
