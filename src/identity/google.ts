@@ -21,8 +21,16 @@
  * ID token's payload client-side (no signature verification) solely to read
  * `sub`; the token arrives directly from Google's library over TLS.
  *
+ * **One Tap is an implementation detail.** v1 uses GIS "One Tap". Under
+ * browser FedCM / third-party-cookie changes, One Tap availability and its
+ * prompt-moment semantics can vary, so `signInWithGoogle` resolves `null`
+ * (rather than throwing) whenever no credential is obtained — callers fall
+ * back gracefully. The public contract (`sub` string or `null`) is
+ * independent of the flow, leaving room to add a rendered-button fallback
+ * later without an API change.
+ *
  * @module scorezilla/identity/google
- * @since 0.3.0-next.1
+ * @since 0.3.0
  */
 
 const GIS_SRC = 'https://accounts.google.com/gsi/client';
@@ -150,13 +158,21 @@ function injectGisScript(): Promise<GoogleIdApi> {
 
 /** True when a One Tap moment means "no credential is coming". */
 function isBlockedMoment(notification: GooglePromptNotification): boolean {
-  if (notification.isNotDisplayed?.() === true) return true;
-  if (notification.isSkippedMoment?.() === true) return true;
-  if (notification.isDismissedMoment?.() === true) {
-    // A dismissal with reason `credential_returned` is the SUCCESS path — the
-    // credential callback already fired (or is about to). Don't treat it as a
-    // rejection.
-    return notification.getDismissedReason?.() !== 'credential_returned';
+  try {
+    if (notification.isNotDisplayed?.() === true) return true;
+    if (notification.isSkippedMoment?.() === true) return true;
+    if (notification.isDismissedMoment?.() === true) {
+      // A dismissal with reason `credential_returned` is the SUCCESS path — the
+      // credential callback already fired (or is about to). Don't treat it as a
+      // "no credential" moment.
+      return notification.getDismissedReason?.() !== 'credential_returned';
+    }
+  } catch {
+    // Under FedCM these legacy moment-status methods are deprecated and can
+    // throw. Treat that as "no credential from this moment" — the credential
+    // callback still fires on success, so this only affects the no-sign-in
+    // path, which resolves to a clean `null`.
+    return true;
   }
   return false;
 }
@@ -179,10 +195,13 @@ function decodeSubFromIdToken(idToken: string): string {
     throw new Error('scorezilla/identity: could not decode the Google credential payload.');
   }
 
-  // Read only `sub`, behind a typeof guard. We never spread, merge, or index
-  // the decoded payload with attacker-influenced keys, so a crafted payload
-  // (e.g. one carrying a `__proto__` key) has no effect — `JSON.parse` does
-  // not mutate prototypes, and nothing here propagates other claims.
+  // Read ONLY `sub`, behind a typeof guard. NEVER read any other claim here
+  // (email, email_verified, aud, …) and NEVER use this value for an
+  // authorization decision: the payload is unverified (no signature check), so
+  // any other claim would be attacker-forgeable. `sub` is safe as an opaque
+  // attribution id only. Reading just `sub` also sidesteps prototype-pollution
+  // — `JSON.parse` doesn't mutate prototypes and nothing here propagates other
+  // keys.
   const sub = (payload as { sub?: unknown }).sub;
   if (typeof sub !== 'string' || sub.length === 0) {
     throw new Error('scorezilla/identity: Google credential is missing the "sub" claim.');
@@ -200,20 +219,38 @@ function base64UrlToJson(segment: string): unknown {
 }
 
 /**
- * Run the Google One Tap flow and resolve with the account's `sub` claim.
- * Rejects if One Tap can't be shown, the user dismisses it, or the returned
- * credential is malformed.
+ * Best-effort: stop GIS auto-selecting this account on the next visit (the
+ * counterpart to `auto_select`). No-op if GIS was never loaded — e.g. a return
+ * visit that short-circuited on the persisted id and never injected the script.
  */
-export async function signInWithGoogle(params: GoogleSignInParams): Promise<string> {
+export function disableGoogleAutoSelect(): void {
+  try {
+    getGoogleIdApi()?.disableAutoSelect();
+  } catch {
+    // GIS not present / not loaded — nothing to disable.
+  }
+}
+
+/**
+ * Run the Google One Tap flow.
+ *
+ * - Resolves the account's `sub` claim on a successful sign-in.
+ * - Resolves `null` when no credential is obtained — the user dismissed or
+ *   declined One Tap, or it couldn't be displayed (no Google session,
+ *   cookies/FedCM blocked, cooldown). "Didn't sign in" is not an error.
+ * - **Throws** only on hard failures: the GIS script failing to load/timing
+ *   out, or a malformed/empty credential.
+ */
+export async function signInWithGoogle(params: GoogleSignInParams): Promise<string | null> {
   const api = await loadGoogleIdentityServices();
 
-  const credential = await new Promise<string>((resolve, reject) => {
+  const credential = await new Promise<string | null>((resolve, reject) => {
     // The credential callback and the prompt moment-listener settle the same
     // promise independently, and GIS does not guarantee their ordering. Guard
-    // against either firing after the other so a late blocking moment can't
-    // reject an already-successful sign-in (and vice versa).
+    // against either firing after the other so a late "no credential" moment
+    // can't override an already-successful sign-in (and vice versa).
     let settled = false;
-    const succeed = (value: string): void => {
+    const finish = (value: string | null): void => {
       if (settled) return;
       settled = true;
       resolve(value);
@@ -230,7 +267,7 @@ export async function signInWithGoogle(params: GoogleSignInParams): Promise<stri
       cancel_on_tap_outside: false,
       callback: (response) => {
         if (response && typeof response.credential === 'string' && response.credential.length > 0) {
-          succeed(response.credential);
+          finish(response.credential);
         } else {
           fail('scorezilla/identity: Google returned an empty credential.');
         }
@@ -238,11 +275,10 @@ export async function signInWithGoogle(params: GoogleSignInParams): Promise<stri
     });
 
     api.prompt((notification) => {
-      if (isBlockedMoment(notification)) {
-        fail('scorezilla/identity: Google sign-in was dismissed or could not be displayed.');
-      }
+      // A blocking moment means no credential is coming for this attempt.
+      if (isBlockedMoment(notification)) finish(null);
     });
   });
 
-  return decodeSubFromIdToken(credential);
+  return credential === null ? null : decodeSubFromIdToken(credential);
 }

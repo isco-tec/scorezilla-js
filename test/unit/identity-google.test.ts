@@ -49,7 +49,8 @@ type Moment =
   | 'skipped'
   | 'dismissedUser'
   | 'dismissedSuccess'
-  | 'successThenBlocked';
+  | 'successThenBlocked'
+  | 'throwingMoment';
 
 interface FakeGisOptions {
   readonly credential?: string;
@@ -96,9 +97,17 @@ function installFakeGis(options: FakeGisOptions = {}): FakeGis {
         });
       } else if (moment === 'successThenBlocked') {
         // The credential arrives, then a stray blocking moment fires after —
-        // the settled guard must keep the sign-in resolved, not reject it.
+        // the settled guard must keep the sign-in resolved, not override it.
         callback?.({ credential: options.credential ?? '' });
         listener?.({ isNotDisplayed: () => true });
+      } else if (moment === 'throwingMoment') {
+        // Under FedCM the legacy moment-status methods can throw — the wrapper
+        // must treat that as "no credential" and resolve null, not crash.
+        listener?.({
+          isNotDisplayed: () => {
+            throw new Error('FedCM: isNotDisplayed is not supported');
+          },
+        });
       }
     },
     disableAutoSelect(): void {
@@ -134,8 +143,10 @@ describeBrowser('useAuthProvider — google', () => {
       storageKey: STORAGE_KEY,
     });
 
-    expect(handle.id).toBe('google:108451');
-    expect(handle.provider).toBe('google');
+    expect(handle).not.toBeNull();
+    expect(handle?.id).toBe('google:108451');
+    expect(handle?.provider).toBe('google');
+    expect(handle?.source).toBe('signed-in');
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe('google:108451');
     expect(gis.calls.initialize).toBe(1);
     expect(gis.calls.prompt).toBe(1);
@@ -163,7 +174,8 @@ describeBrowser('useAuthProvider — google', () => {
       storageKey: STORAGE_KEY,
     });
 
-    expect(handle.id).toBe('google:returning');
+    expect(handle?.id).toBe('google:returning');
+    expect(handle?.source).toBe('restored');
     expect(gis.calls.initialize).toBe(0);
     expect(gis.calls.prompt).toBe(0);
   });
@@ -176,7 +188,8 @@ describeBrowser('useAuthProvider — google', () => {
       storageKey: STORAGE_KEY,
     });
 
-    handle.signOut();
+    expect(handle).not.toBeNull();
+    handle?.signOut();
 
     expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
     expect(gis.calls.disableAutoSelect).toBe(1);
@@ -189,7 +202,7 @@ describeBrowser('useAuthProvider — google', () => {
       clientId: CLIENT_ID,
       storageKey: STORAGE_KEY,
     });
-    expect(handle.id).toBe('google:ok');
+    expect(handle?.id).toBe('google:ok');
   });
 
   it('ignores a blocking moment that arrives after a successful credential', async () => {
@@ -199,28 +212,36 @@ describeBrowser('useAuthProvider — google', () => {
       clientId: CLIENT_ID,
       storageKey: STORAGE_KEY,
     });
-    expect(handle.id).toBe('google:race');
+    expect(handle?.id).toBe('google:race');
   });
 
-  it('rejects when One Tap is not displayed', async () => {
+  it('resolves null (no persist) when One Tap is not displayed', async () => {
     installFakeGis({ moment: 'notDisplayed' });
     await expect(
       useAuthProvider({ provider: 'google', clientId: CLIENT_ID, storageKey: STORAGE_KEY }),
-    ).rejects.toThrow(/dismissed or could not be displayed/i);
+    ).resolves.toBeNull();
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 
-  it('rejects when One Tap is skipped', async () => {
+  it('resolves null when One Tap is skipped', async () => {
     installFakeGis({ moment: 'skipped' });
     await expect(
       useAuthProvider({ provider: 'google', clientId: CLIENT_ID, storageKey: STORAGE_KEY }),
-    ).rejects.toThrow(/dismissed or could not be displayed/i);
+    ).resolves.toBeNull();
   });
 
-  it('rejects when the user dismisses One Tap', async () => {
+  it('resolves null when the user dismisses One Tap', async () => {
     installFakeGis({ moment: 'dismissedUser' });
     await expect(
       useAuthProvider({ provider: 'google', clientId: CLIENT_ID, storageKey: STORAGE_KEY }),
-    ).rejects.toThrow(/dismissed/i);
+    ).resolves.toBeNull();
+  });
+
+  it('resolves null when a FedCM moment-status method throws', async () => {
+    installFakeGis({ moment: 'throwingMoment' });
+    await expect(
+      useAuthProvider({ provider: 'google', clientId: CLIENT_ID, storageKey: STORAGE_KEY }),
+    ).resolves.toBeNull();
   });
 
   it('rejects an empty credential', async () => {
@@ -266,7 +287,7 @@ describeBrowser('useAuthProvider — google', () => {
       storageKey: STORAGE_KEY,
     });
 
-    expect(handle.id).toBe('google:lazy');
+    expect(handle?.id).toBe('google:lazy');
     expect(appendSpy).toHaveBeenCalledOnce();
   });
 
@@ -289,8 +310,24 @@ describeBrowser('useAuthProvider — google', () => {
     ]);
 
     expect(appendCount).toBe(1);
-    expect(a.id).toBe('google:concurrent');
-    expect(b.id).toBe('google:concurrent');
+    expect(a?.id).toBe('google:concurrent');
+    expect(b?.id).toBe('google:concurrent');
+  });
+
+  it('coalesces concurrent sign-ins for the same storageKey into one One Tap', async () => {
+    const gis = installFakeGis({ credential: makeIdToken({ sub: 'shared' }), moment: 'success' });
+
+    const [a, b] = await Promise.all([
+      useAuthProvider({ provider: 'google', clientId: CLIENT_ID, storageKey: STORAGE_KEY }),
+      useAuthProvider({ provider: 'google', clientId: CLIENT_ID, storageKey: STORAGE_KEY }),
+    ]);
+
+    expect(a?.id).toBe('google:shared');
+    expect(b?.id).toBe('google:shared');
+    // The losing call shares the in-flight promise instead of racing GIS's
+    // single global callback (which would otherwise leave it unresolved).
+    expect(gis.calls.initialize).toBe(1);
+    expect(gis.calls.prompt).toBe(1);
   });
 
   it('rejects when the GIS script fails to load', async () => {

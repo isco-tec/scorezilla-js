@@ -15,7 +15,7 @@
  * @since 0.3.0
  */
 
-import { signInWithGoogle } from './identity/google';
+import { disableGoogleAutoSelect, signInWithGoogle } from './identity/google';
 
 export interface AnonymousPlayerOptions {
   /** localStorage key under which the generated UUID is persisted. */
@@ -79,17 +79,24 @@ export interface GoogleAuthProviderOptions {
  * a client secret and GitHub's token endpoint sends no CORS headers), so the
  * GitHub provider will require a server-side token exchange (your backend or
  * a Scorezilla Workers proxy). Calling it today rejects.
+ *
+ * @experimental The option fields below are provisional and will be finalized
+ * (e.g. `clientId` becoming required, plus a token-exchange-endpoint field)
+ * when the provider lands in `0.3.0-next.2` — before the `0.3.0` stable cut.
  */
 export interface GitHubAuthProviderOptions {
   readonly provider: 'github';
-  /** Reserved — your GitHub OAuth app client ID. */
+  /** Reserved (provisional) — your GitHub OAuth app client ID. */
   readonly clientId?: string;
-  /** Reserved — localStorage key for the derived player id. */
+  /** Reserved (provisional) — localStorage key for the derived player id. */
   readonly storageKey?: string;
 }
 
 /** Discriminated union of {@link useAuthProvider} options, keyed on `provider`. */
 export type AuthProviderOptions = GoogleAuthProviderOptions | GitHubAuthProviderOptions;
+
+/** How an {@link AuthPlayerHandle}'s `id` was obtained on this call. */
+export type AuthIdSource = 'signed-in' | 'restored';
 
 /**
  * Handle returned by {@link useAuthProvider}. `id` is the opaque, stable
@@ -100,6 +107,13 @@ export type AuthProviderOptions = GoogleAuthProviderOptions | GitHubAuthProvider
 export interface AuthPlayerHandle {
   readonly id: string;
   readonly provider: AuthProvider;
+  /**
+   * `'signed-in'` when the id came from a fresh provider sign-in during this
+   * call; `'restored'` when it was rehydrated from a prior session in
+   * `localStorage` with no provider interaction. A `'restored'` id is **not**
+   * a re-verified live session — see {@link useAuthProvider}.
+   */
+  readonly source: AuthIdSource;
   readonly signOut: () => void;
 }
 
@@ -289,11 +303,30 @@ export function useServerAuthoritative(): ServerAuthoritativeMarker {
  * OAuth-backed player identity. Signs the player in with the chosen provider
  * and resolves a stable, opaque `playerId` derived from their account.
  *
- * **Google** (stable since `0.3.0-next.1`) wraps Google Identity Services
- * "One Tap". The derived id is `google:<sub>`, where `sub` is the account's
- * stable Google subject identifier. The id is persisted in `localStorage`
- * under `storageKey`, so returning visitors are recognized without signing in
- * again; `signOut()` clears it.
+ * Resolves to:
+ * - an {@link AuthPlayerHandle} on success — `handle.source` distinguishes a
+ *   fresh sign-in (`'signed-in'`) from a `localStorage`-restored prior session
+ *   (`'restored'`); or
+ * - `null` when the player **declines / dismisses** sign-in, or it can't be
+ *   shown (no provider session, blocked cookies). "Didn't sign in" is not an
+ *   error — fall back to another identity strategy.
+ *
+ * **Rejects** only on genuine failures: invalid arguments (`TypeError`), an
+ * unavailable provider, or the provider flow breaking (script load failure,
+ * malformed credential). Identity helpers throw plain `Error`/`TypeError` by
+ * design — NOT `ScorezillaError` — so the `scorezilla/identity` subpath stays
+ * dependency-free; don't `instanceof ScorezillaError` these.
+ *
+ * > Despite the `use*` name (shared with the other presets), this is a plain
+ * > async function, **not a React hook** — rules-of-hooks don't apply. The
+ * > `scorezilla/react` adapter exposes the React-bound surface separately.
+ *
+ * **Google** (stable since `0.3.0`) wraps Google Identity Services "One Tap".
+ * The derived id is `google:<sub>`. It's persisted in `localStorage` under
+ * `storageKey`, so returning visitors are recognized without signing in again
+ * (`handle.source === 'restored'`); `signOut()` clears it. The host page's CSP
+ * must allow `https://accounts.google.com` (`script-src`, plus `frame-src` /
+ * `connect-src` for One Tap).
  *
  * **GitHub** ships in `0.3.0-next.2` and currently rejects — see
  * {@link GitHubAuthProviderOptions}.
@@ -321,14 +354,18 @@ export function useServerAuthoritative(): ServerAuthoritativeMarker {
  *   storageKey: 'mygame:player',
  * });
  *
- * const sz = new Scorezilla({ publicKey: 'pk_…' });
- * await sz.submitScore({ boardId, playerId: player.id, score: 42 });
+ * if (player) {
+ *   const sz = new Scorezilla({ publicKey: 'pk_…' });
+ *   await sz.submitScore({ boardId, playerId: player.id, score: 42 });
+ * }
  * ```
  *
- * @since 0.3.0-next.1
+ * @since 0.3.0
  * @stability stable (google) · preview (github)
  */
-export async function useAuthProvider(options: AuthProviderOptions): Promise<AuthPlayerHandle> {
+export async function useAuthProvider(
+  options: AuthProviderOptions,
+): Promise<AuthPlayerHandle | null> {
   if (!options || typeof options !== 'object') {
     throw new TypeError('useAuthProvider: options is required ({ provider, … }).');
   }
@@ -353,61 +390,64 @@ export async function useAuthProvider(options: AuthProviderOptions): Promise<Aut
   }
 }
 
+// Coalesces concurrent sign-ins for the same storageKey (e.g. React StrictMode
+// double-invoke, or two leaderboards on one page) so they share a single One
+// Tap rather than racing GIS's single global callback — which would otherwise
+// leave the losing call's promise unresolved. Entries clear when the sign-in
+// settles, so this never accumulates state.
+const googleSignInInFlight = new Map<string, Promise<AuthPlayerHandle | null>>();
+
 async function signInWithGoogleProvider(
   options: GoogleAuthProviderOptions,
-): Promise<AuthPlayerHandle> {
+): Promise<AuthPlayerHandle | null> {
   const clientId = requireNonEmptyString('useAuthProvider', 'clientId', options.clientId);
   const storageKey = requireNonEmptyString('useAuthProvider', 'storageKey', options.storageKey);
 
   // Return visit: trust the persisted id without re-running sign-in. Like the
   // other presets, this value is whatever is in localStorage under storageKey
-  // — it is NOT a freshly re-verified Google identity. That's consistent with
-  // ADR 0003's model (playerId is opaque attribution, never an auth credential;
-  // the secure path signs submissions server-side). Call signOut() to force a
-  // fresh sign-in next time.
+  // — it is NOT a freshly re-verified Google identity (hence source:
+  // 'restored'). Consistent with ADR 0003 (playerId is opaque attribution,
+  // never an auth credential; the secure path signs submissions server-side).
+  // Call signOut() to force a fresh sign-in next time.
   const persisted = readPersisted(storageKey);
   if (persisted !== null && persisted.length > 0) {
-    return makeAuthHandle(persisted, 'google', storageKey);
+    return makeAuthHandle(persisted, 'google', storageKey, 'restored');
   }
 
   if (!isBrowser()) {
     throw new Error('useAuthProvider: Google sign-in requires a browser environment.');
   }
 
-  const sub = await signInWithGoogle({ clientId, autoSelect: options.autoSelect ?? false });
-  const id = `google:${sub}`;
-  writePersisted(storageKey, id);
-  return makeAuthHandle(id, 'google', storageKey);
+  const existing = googleSignInInFlight.get(storageKey);
+  if (existing) return existing;
+
+  const run = (async (): Promise<AuthPlayerHandle | null> => {
+    const sub = await signInWithGoogle({ clientId, autoSelect: options.autoSelect ?? false });
+    if (sub === null) return null;
+    const id = `google:${sub}`;
+    writePersisted(storageKey, id);
+    return makeAuthHandle(id, 'google', storageKey, 'signed-in');
+  })().finally(() => {
+    googleSignInInFlight.delete(storageKey);
+  });
+
+  googleSignInInFlight.set(storageKey, run);
+  return run;
 }
 
-function makeAuthHandle(id: string, provider: AuthProvider, storageKey: string): AuthPlayerHandle {
+function makeAuthHandle(
+  id: string,
+  provider: AuthProvider,
+  storageKey: string,
+  source: AuthIdSource,
+): AuthPlayerHandle {
   return {
     id,
     provider,
+    source,
     signOut: () => {
       removePersisted(storageKey);
       if (provider === 'google') disableGoogleAutoSelect();
     },
   };
-}
-
-/**
- * Best-effort: tell Google Identity Services not to auto-select this account
- * next time. No-op if GIS was never loaded (e.g. a returning visit that
- * short-circuited on the persisted id). Kept inline — not imported from the
- * google provider module — so it doesn't pull that module into the core
- * `scorezilla/identity` bundle.
- */
-function disableGoogleAutoSelect(): void {
-  if (!isBrowser()) return;
-  try {
-    const gis = (
-      window as unknown as {
-        google?: { accounts?: { id?: { disableAutoSelect?: () => void } } };
-      }
-    ).google;
-    gis?.accounts?.id?.disableAutoSelect?.();
-  } catch {
-    // GIS not present / not loaded — nothing to disable.
-  }
 }
