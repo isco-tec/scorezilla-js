@@ -163,8 +163,17 @@ export const POST = createScoreSubmitHandler({
 });
 ```
 
-**Any other JWKS provider** (Clerk, Auth0, Firebase, …) uses the generic
-`verifyJwt` — same call, different config:
+**Clerk, Auth0, and Firebase have presets too:**
+
+```ts
+import { verifyClerkJwt, verifyAuth0Jwt, verifyFirebaseIdToken } from 'scorezilla/server';
+
+verify: verifyClerkJwt({ issuer: 'https://clerk.your-app.com' });
+verify: verifyAuth0Jwt({ domain: 'you.us.auth0.com', audience: 'your-api' });
+verify: verifyFirebaseIdToken({ projectId: 'your-firebase-project' });
+```
+
+**Any other JWKS provider** uses the generic `verifyJwt`:
 
 ```ts
 import { verifyJwt } from 'scorezilla/server';
@@ -172,8 +181,7 @@ import { verifyJwt } from 'scorezilla/server';
 verify: verifyJwt({
   jwksUrl: 'https://your-issuer/.well-known/jwks.json',
   issuer: 'https://your-issuer',
-  audience: 'your-api',
-  // claim: 'sub' (default) → becomes the playerId
+  audience: 'your-api', // claim: 'sub' (default) → playerId
 });
 ```
 

@@ -136,3 +136,102 @@ export function verifySupabaseJwt(options: VerifySupabaseJwtOptions): RequestVer
     ...(options.fetch !== undefined ? { fetch: options.fetch } : {}),
   });
 }
+
+/** Options for the Clerk preset {@link verifyClerkJwt}. */
+export interface VerifyClerkJwtOptions {
+  /**
+   * Your Clerk instance issuer (the token's `iss`), e.g.
+   * `https://clerk.your-app.com` or `https://<slug>.clerk.accounts.dev`. The
+   * JWKS URL is derived from it.
+   */
+  readonly issuer: string;
+  /**
+   * Expected `aud`. Clerk session tokens have **no** `aud` by default, so leave
+   * this unset unless you added one via a custom JWT template.
+   */
+  readonly audience?: string | string[];
+  /** Which claim becomes the `playerId`. Default `'sub'` (the Clerk user id). */
+  readonly claim?: string;
+  /** Custom `fetch` for retrieving the JWKS (proxy / self-host / testing). */
+  readonly fetch?: typeof fetch;
+}
+
+/**
+ * Clerk preset over {@link verifyJwt}. Verifies a Clerk session JWT against the
+ * instance JWKS and derives the `playerId` from `sub` (the Clerk user id).
+ *
+ * @since 0.3.0
+ */
+export function verifyClerkJwt(options: VerifyClerkJwtOptions): RequestVerifier {
+  const issuer = options.issuer.replace(/\/+$/, '');
+  return verifyJwt({
+    jwksUrl: `${issuer}/.well-known/jwks.json`,
+    issuer,
+    ...(options.audience !== undefined ? { audience: options.audience } : {}),
+    ...(options.claim !== undefined ? { claim: options.claim } : {}),
+    ...(options.fetch !== undefined ? { fetch: options.fetch } : {}),
+  });
+}
+
+/** Options for the Auth0 preset {@link verifyAuth0Jwt}. */
+export interface VerifyAuth0JwtOptions {
+  /** Your Auth0 domain, e.g. `your-tenant.us.auth0.com` (scheme optional). */
+  readonly domain: string;
+  /** Your API identifier — the access token's `aud`. */
+  readonly audience: string | string[];
+  /** Which claim becomes the `playerId`. Default `'sub'`. */
+  readonly claim?: string;
+  /** Custom `fetch` for retrieving the JWKS (proxy / self-host / testing). */
+  readonly fetch?: typeof fetch;
+}
+
+/**
+ * Auth0 preset over {@link verifyJwt}. Note Auth0's issuer carries a trailing
+ * slash (`https://<domain>/`) — the preset adds it for you.
+ *
+ * @since 0.3.0
+ */
+export function verifyAuth0Jwt(options: VerifyAuth0JwtOptions): RequestVerifier {
+  const host = options.domain.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  return verifyJwt({
+    jwksUrl: `https://${host}/.well-known/jwks.json`,
+    issuer: `https://${host}/`,
+    audience: options.audience,
+    ...(options.claim !== undefined ? { claim: options.claim } : {}),
+    ...(options.fetch !== undefined ? { fetch: options.fetch } : {}),
+  });
+}
+
+/**
+ * JWK-set endpoint for Firebase ID tokens (the `securetoken` system service
+ * account). Google publishes a standard JWK set here — no x509 import needed.
+ */
+const FIREBASE_JWKS_URL =
+  'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
+
+/** Options for the Firebase preset {@link verifyFirebaseIdToken}. */
+export interface VerifyFirebaseIdTokenOptions {
+  /** Your Firebase project id — both the token's `aud` and the issuer suffix. */
+  readonly projectId: string;
+  /** Which claim becomes the `playerId`. Default `'sub'` (the Firebase uid). */
+  readonly claim?: string;
+  /** Custom `fetch` for retrieving the JWKS (proxy / self-host / testing). */
+  readonly fetch?: typeof fetch;
+}
+
+/**
+ * Firebase Authentication preset over {@link verifyJwt}. Verifies a Firebase ID
+ * token (`iss = https://securetoken.google.com/<projectId>`, `aud = projectId`)
+ * and derives the `playerId` from `sub` (the Firebase uid).
+ *
+ * @since 0.3.0
+ */
+export function verifyFirebaseIdToken(options: VerifyFirebaseIdTokenOptions): RequestVerifier {
+  return verifyJwt({
+    jwksUrl: FIREBASE_JWKS_URL,
+    issuer: `https://securetoken.google.com/${options.projectId}`,
+    audience: options.projectId,
+    ...(options.claim !== undefined ? { claim: options.claim } : {}),
+    ...(options.fetch !== undefined ? { fetch: options.fetch } : {}),
+  });
+}

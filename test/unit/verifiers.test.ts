@@ -11,7 +11,13 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
-import { verifyJwt, verifySupabaseJwt } from '../../src/server';
+import {
+  verifyAuth0Jwt,
+  verifyClerkJwt,
+  verifyFirebaseIdToken,
+  verifyJwt,
+  verifySupabaseJwt,
+} from '../../src/server';
 
 const KID = 'test-key-1';
 const ISSUER = 'https://issuer.test';
@@ -135,6 +141,91 @@ describe('verifySupabaseJwt', () => {
       issuer: 'https://attacker.supabase.co/auth/v1',
       audience: 'authenticated',
       claims: { sub: 'sb-user' },
+    });
+    expect(await verify(bearer(token))).toBeNull();
+  });
+});
+
+describe('verifyClerkJwt', () => {
+  const ISS = 'https://clerk.test.app';
+
+  it('verifies a Clerk session token (no audience by default)', async () => {
+    const verify = verifyClerkJwt({ issuer: ISS, fetch: jwksFetch });
+    // Clerk session tokens carry no aud; the preset must not require one.
+    const token = await sign({ issuer: ISS, audience: 'whatever', claims: { sub: 'clerk-user' } });
+    expect(await verify(bearer(token))).toEqual({ playerId: 'clerk-user' });
+  });
+
+  it('rejects a token from a different Clerk issuer', async () => {
+    const verify = verifyClerkJwt({ issuer: ISS, fetch: jwksFetch });
+    const token = await sign({ issuer: 'https://clerk.evil.app', claims: { sub: 'u' } });
+    expect(await verify(bearer(token))).toBeNull();
+  });
+});
+
+describe('verifyAuth0Jwt', () => {
+  it('verifies an Auth0 token (issuer gets the trailing slash, audience checked)', async () => {
+    const verify = verifyAuth0Jwt({
+      domain: 'tenant.us.auth0.com',
+      audience: 'my-api',
+      fetch: jwksFetch,
+    });
+    const token = await sign({
+      issuer: 'https://tenant.us.auth0.com/', // Auth0 issuer has a trailing slash
+      audience: 'my-api',
+      claims: { sub: 'auth0-user' },
+    });
+    expect(await verify(bearer(token))).toEqual({ playerId: 'auth0-user' });
+  });
+
+  it('accepts a domain given with a scheme', async () => {
+    const verify = verifyAuth0Jwt({
+      domain: 'https://tenant.us.auth0.com',
+      audience: 'my-api',
+      fetch: jwksFetch,
+    });
+    const token = await sign({
+      issuer: 'https://tenant.us.auth0.com/',
+      audience: 'my-api',
+      claims: { sub: 'auth0-user' },
+    });
+    expect(await verify(bearer(token))).toEqual({ playerId: 'auth0-user' });
+  });
+
+  it('rejects a token for the wrong audience', async () => {
+    const verify = verifyAuth0Jwt({
+      domain: 'tenant.us.auth0.com',
+      audience: 'my-api',
+      fetch: jwksFetch,
+    });
+    const token = await sign({
+      issuer: 'https://tenant.us.auth0.com/',
+      audience: 'other-api',
+      claims: { sub: 'u' },
+    });
+    expect(await verify(bearer(token))).toBeNull();
+  });
+});
+
+describe('verifyFirebaseIdToken', () => {
+  const PROJECT = 'my-firebase-proj';
+
+  it('verifies a Firebase ID token (issuer + audience scoped to projectId)', async () => {
+    const verify = verifyFirebaseIdToken({ projectId: PROJECT, fetch: jwksFetch });
+    const token = await sign({
+      issuer: `https://securetoken.google.com/${PROJECT}`,
+      audience: PROJECT,
+      claims: { sub: 'fb-uid' },
+    });
+    expect(await verify(bearer(token))).toEqual({ playerId: 'fb-uid' });
+  });
+
+  it('rejects a token minted for a different project', async () => {
+    const verify = verifyFirebaseIdToken({ projectId: PROJECT, fetch: jwksFetch });
+    const token = await sign({
+      issuer: 'https://securetoken.google.com/other-proj',
+      audience: 'other-proj',
+      claims: { sub: 'fb-uid' },
     });
     expect(await verify(bearer(token))).toBeNull();
   });

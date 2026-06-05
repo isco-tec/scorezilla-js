@@ -17,9 +17,10 @@ export const POST = createScoreSubmitHandler({
 });
 ```
 
-- `verifyJwt({ jwksUrl, issuer, audience, claim? })` — generic JWKS verifier
-  covering Clerk, Auth0, Firebase, WorkOS, and most providers (they differ only
-  by config). `verifySupabaseJwt({ supabaseUrl })` is the Supabase preset.
+- `verifyJwt({ jwksUrl, issuer, audience, claim? })` — generic JWKS verifier,
+  plus first-class presets for the popular providers: `verifySupabaseJwt({
+  supabaseUrl })`, `verifyClerkJwt({ issuer })`, `verifyAuth0Jwt({ domain,
+  audience })`, and `verifyFirebaseIdToken({ projectId })`.
 - **`jose` is an optional peer dependency**, loaded lazily via dynamic
   `import()` — consumers who use the public-key client, the factory with their
   own `verify`, or a provider backend SDK never install or load it.
