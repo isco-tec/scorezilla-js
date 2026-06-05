@@ -122,6 +122,68 @@ browser throws at module evaluation. Use environment variables (or your
 secret manager) to load the `sk_live_*` value; never embed it in a build
 that ships to clients.
 
+### Turnkey endpoint: `createScoreSubmitHandler`
+
+Wiring the secure path by hand means verifying your auth, deriving the player
+id from it, validating the body, signing, and mapping errors.
+`createScoreSubmitHandler` does all of that — you supply only your auth. It
+returns a standard `(Request) => Promise<Response>`, so it drops into a
+Cloudflare Worker, a Next.js route handler, Hono, Deno, or Bun.
+
+```ts
+import { createScoreSubmitHandler } from 'scorezilla/server';
+
+export const POST = createScoreSubmitHandler({
+  secretKey: process.env.SCOREZILLA_SECRET_KEY!,
+  boardId: process.env.SCOREZILLA_BOARD_ID!,
+  // The one app-specific bit: prove identity, return the TRUSTED playerId.
+  // The submitted playerId comes from here — never from the request body.
+  verify: async (req) => {
+    const user = await myAuth(req);
+    return user ? { playerId: user.id } : null;
+  },
+  cors: { origin: 'https://mygame.example' }, // omit for same-origin
+});
+```
+
+Your client just POSTs `{ score, metadata? }` (plus its auth header) to the
+endpoint; the handler signs and forwards it.
+
+**It works with any auth — `verify` is the universal seam.** For example,
+Supabase:
+
+```ts
+import { jwtVerify, createRemoteJWKSet } from 'jose';
+
+const jwks = createRemoteJWKSet(
+  new URL(`${process.env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`),
+);
+
+verify: async (req) => {
+  const token = req.headers.get('authorization')?.replace(/^Bearer /i, '');
+  if (!token) return null;
+  try {
+    const { payload } = await jwtVerify(token, jwks, {
+      issuer: `${process.env.SUPABASE_URL}/auth/v1`,
+      audience: 'authenticated',
+    });
+    return { playerId: payload.sub as string };
+  } catch {
+    return null;
+  }
+};
+```
+
+Clerk, Auth0, Firebase, and most providers verify the same JWKS way (just a
+different URL/issuer/audience). For Lucia or other opaque-session systems,
+`verify` does a session→userId lookup against your DB. Bring your provider's
+backend SDK if you prefer — anything that returns `{ playerId }` works.
+
+> First-class one-line verifiers (`verifySupabaseJwt`, generic `verifyJwt`,
+> then Clerk/Auth0/Firebase) are on the roadmap — see
+> [scorezilla#211](https://github.com/isco-tec/scorezilla/issues/211). Until
+> they land, the `verify` callback above is all you need.
+
 ## Error handling
 
 Every failure path — HTTP non-2xx, network error, timeout, abort, JSON parse
