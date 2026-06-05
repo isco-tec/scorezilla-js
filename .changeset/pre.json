@@ -5,6 +5,7 @@
     "scorezilla": "0.2.0"
   },
   "changesets": [
+    "google-oauth-provider",
     "identity-presets-phase-1"
   ]
 }
