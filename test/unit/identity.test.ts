@@ -191,7 +191,13 @@ describe('useAuthProvider', () => {
   it('requires a storageKey for the google provider', async () => {
     await expect(
       // @ts-expect-error — testing runtime guard for invalid input
-      useAuthProvider({ provider: 'google', clientId: 'c' }),
+      useAuthProvider({ provider: 'google', clientId: 'x.apps.googleusercontent.com' }),
     ).rejects.toThrow(/storageKey/);
+  });
+
+  it('rejects a clientId that is not a Google OAuth client ID', async () => {
+    await expect(
+      useAuthProvider({ provider: 'google', clientId: 'not-a-google-id', storageKey: 'k' }),
+    ).rejects.toThrow(/apps\.googleusercontent\.com/);
   });
 });

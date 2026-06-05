@@ -67,14 +67,27 @@ export interface GoogleSignInParams {
   readonly autoSelect: boolean;
 }
 
+/** Google OAuth Web client IDs always end with this suffix. */
+const GOOGLE_CLIENT_ID_SUFFIX = '.apps.googleusercontent.com';
+
+/**
+ * True if `clientId` has the shape of a Google OAuth Web client ID. Used to
+ * turn a typo'd id into an actionable error up front, rather than a silent
+ * "One Tap couldn't be shown" → `null` further down.
+ */
+export function isGoogleClientId(clientId: string): boolean {
+  return clientId.endsWith(GOOGLE_CLIENT_ID_SUFFIX);
+}
+
 function getGoogleIdApi(): GoogleIdApi | undefined {
   return (globalThis as GoogleGlobal).google?.accounts?.id;
 }
 
 // Dedupes concurrent / retry-after-failure calls so the GIS <script> is never
 // injected twice. Cleared once the load settles (success or failure), so a
-// later sign-in starts clean — the `getGoogleIdApi()` fast-path covers the
-// common "already loaded" case after the first success.
+// later sign-in starts clean. This relies on GIS being a page-level global:
+// once loaded, `getGoogleIdApi()` sees it from any subsequent call, which is
+// what makes clearing-on-settle safe (the fast-path covers "already loaded").
 let gisLoadInFlight: Promise<GoogleIdApi> | null = null;
 
 /**

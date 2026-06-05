@@ -74,12 +74,13 @@ module.exports = [
     name: 'ESM — `scorezilla/identity` core only (tree-shaking proof: OAuth dropped)',
     path: 'dist/identity.js',
     import: '{ useAnonymousPlayer }',
-    // Proves a consumer who only uses the non-OAuth presets does NOT bundle
-    // the Google provider: `sideEffects: false` lets the bundler drop the
-    // unused `useAuthProvider` subtree (and the inlined GIS wrapper with it).
-    // Keep this tight — if it creeps toward the full-surface number, OAuth
-    // code has leaked into the core path and the lazy boundary is broken.
-    limit: '1 KB',
+    // Proves a consumer who only uses the non-OAuth presets does NOT bundle the
+    // Google provider: `sideEffects: false` lets the bundler drop the unused
+    // `useAuthProvider` subtree, and with it the entire `./identity/google`
+    // module. This is the real boundary guard — the cap is set just above the
+    // actual core size (~0.38 KB), so any GIS leak (the wrapper is ~1 KB+)
+    // trips it immediately. A legitimate core-preset change bumps it knowingly.
+    limit: '0.6 KB',
     gzip: true,
     brotli: false,
   },

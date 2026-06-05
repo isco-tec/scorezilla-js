@@ -15,7 +15,7 @@
  * @since 0.3.0
  */
 
-import { disableGoogleAutoSelect, signInWithGoogle } from './identity/google';
+import { disableGoogleAutoSelect, isGoogleClientId, signInWithGoogle } from './identity/google';
 
 export interface AnonymousPlayerOptions {
   /** localStorage key under which the generated UUID is persisted. */
@@ -401,6 +401,13 @@ async function signInWithGoogleProvider(
   options: GoogleAuthProviderOptions,
 ): Promise<AuthPlayerHandle | null> {
   const clientId = requireNonEmptyString('useAuthProvider', 'clientId', options.clientId);
+  if (!isGoogleClientId(clientId)) {
+    throw new TypeError(
+      'useAuthProvider: options.clientId must be a Google OAuth client ID ' +
+        '(ending in ".apps.googleusercontent.com"). Create one at ' +
+        'https://console.cloud.google.com/apis/credentials.',
+    );
+  }
   const storageKey = requireNonEmptyString('useAuthProvider', 'storageKey', options.storageKey);
 
   // Return visit: trust the persisted id without re-running sign-in. Like the
