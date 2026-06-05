@@ -56,12 +56,30 @@ module.exports = [
     brotli: false,
   },
   {
-    name: 'ESM — `scorezilla/identity` (preset helpers)',
+    name: 'ESM — `scorezilla/identity` full surface (incl. Google OAuth wrapper)',
     path: 'dist/identity.js',
     import: '*',
-    // No deps, pure helpers; budget intentionally tight. Bumps need
-    // a real reason (e.g. OAuth provider code shipping in 0.3.x).
-    limit: '2 KB',
+    // OAuth (Google) shipped in 0.3.0-next.1 — the "real reason" the original
+    // 2 KB note anticipated. This worst-case figure pulls in the whole surface
+    // including the Google provider wrapper. The heavy Google Identity Services
+    // library itself is NOT bundled — it's fetched at runtime from
+    // accounts.google.com — so this delta is only the thin wrapper + a
+    // JWT-payload decode. Non-OAuth consumers don't pay for it; the
+    // tree-shaking-proof entry below gates that.
+    limit: '3 KB',
+    gzip: true,
+    brotli: false,
+  },
+  {
+    name: 'ESM — `scorezilla/identity` core only (tree-shaking proof: OAuth dropped)',
+    path: 'dist/identity.js',
+    import: '{ useAnonymousPlayer }',
+    // Proves a consumer who only uses the non-OAuth presets does NOT bundle
+    // the Google provider: `sideEffects: false` lets the bundler drop the
+    // unused `useAuthProvider` subtree (and the inlined GIS wrapper with it).
+    // Keep this tight — if it creeps toward the full-surface number, OAuth
+    // code has leaked into the core path and the lazy boundary is broken.
+    limit: '1 KB',
     gzip: true,
     brotli: false,
   },

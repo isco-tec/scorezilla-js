@@ -157,8 +157,41 @@ describe('useServerAuthoritative', () => {
 });
 
 describe('useAuthProvider', () => {
-  it('throws with a helpful message in the 0.3.0-next preview', () => {
-    expect(() => useAuthProvider({ provider: 'google' })).toThrow(/not yet implemented/i);
-    expect(() => useAuthProvider({ provider: 'github' })).toThrow(/not yet implemented/i);
+  it('rejects the github provider as not-yet-available (ships in next.2)', async () => {
+    await expect(useAuthProvider({ provider: 'github' })).rejects.toThrow(
+      /github provider is not available yet/i,
+    );
+  });
+
+  it('points github integrators at the server-side token exchange', async () => {
+    await expect(useAuthProvider({ provider: 'github' })).rejects.toThrow(
+      /server-side token exchange/i,
+    );
+  });
+
+  it('rejects an unknown provider', async () => {
+    await expect(
+      // @ts-expect-error — testing runtime guard for invalid input
+      useAuthProvider({ provider: 'twitter' }),
+    ).rejects.toThrow(TypeError);
+  });
+
+  it('rejects missing options', async () => {
+    // @ts-expect-error — testing runtime guard for invalid input
+    await expect(useAuthProvider(undefined)).rejects.toThrow(TypeError);
+  });
+
+  it('requires a clientId for the google provider', async () => {
+    await expect(
+      // @ts-expect-error — testing runtime guard for invalid input
+      useAuthProvider({ provider: 'google', storageKey: 'k' }),
+    ).rejects.toThrow(/clientId/);
+  });
+
+  it('requires a storageKey for the google provider', async () => {
+    await expect(
+      // @ts-expect-error — testing runtime guard for invalid input
+      useAuthProvider({ provider: 'google', clientId: 'c' }),
+    ).rejects.toThrow(/storageKey/);
   });
 });
