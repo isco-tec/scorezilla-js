@@ -149,40 +149,45 @@ export const POST = createScoreSubmitHandler({
 Your client just POSTs `{ score, metadata? }` (plus its auth header) to the
 endpoint; the handler signs and forwards it.
 
-**It works with any auth — `verify` is the universal seam.** For example,
-Supabase:
+**Supabase? One line.** Built-in verifiers do the JWKS verification for you.
+(`jose` is an optional peer dependency, loaded only when you use a built-in
+verifier — `npm i jose`.)
 
 ```ts
-import { jwtVerify, createRemoteJWKSet } from 'jose';
+import { createScoreSubmitHandler, verifySupabaseJwt } from 'scorezilla/server';
 
-const jwks = createRemoteJWKSet(
-  new URL(`${process.env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`),
-);
-
-verify: async (req) => {
-  const token = req.headers.get('authorization')?.replace(/^Bearer /i, '');
-  if (!token) return null;
-  try {
-    const { payload } = await jwtVerify(token, jwks, {
-      issuer: `${process.env.SUPABASE_URL}/auth/v1`,
-      audience: 'authenticated',
-    });
-    return { playerId: payload.sub as string };
-  } catch {
-    return null;
-  }
-};
+export const POST = createScoreSubmitHandler({
+  secretKey: process.env.SCOREZILLA_SECRET_KEY!,
+  boardId: process.env.SCOREZILLA_BOARD_ID!,
+  verify: verifySupabaseJwt({ supabaseUrl: process.env.SUPABASE_URL! }),
+});
 ```
 
-Clerk, Auth0, Firebase, and most providers verify the same JWKS way (just a
-different URL/issuer/audience). For Lucia or other opaque-session systems,
-`verify` does a session→userId lookup against your DB. Bring your provider's
-backend SDK if you prefer — anything that returns `{ playerId }` works.
+**Any other JWKS provider** (Clerk, Auth0, Firebase, …) uses the generic
+`verifyJwt` — same call, different config:
 
-> First-class one-line verifiers (`verifySupabaseJwt`, generic `verifyJwt`,
-> then Clerk/Auth0/Firebase) are on the roadmap — see
-> [scorezilla#211](https://github.com/isco-tec/scorezilla/issues/211). Until
-> they land, the `verify` callback above is all you need.
+```ts
+import { verifyJwt } from 'scorezilla/server';
+
+verify: verifyJwt({
+  jwksUrl: 'https://your-issuer/.well-known/jwks.json',
+  issuer: 'https://your-issuer',
+  audience: 'your-api',
+  // claim: 'sub' (default) → becomes the playerId
+});
+```
+
+**Anything else** — the `verify` callback is the universal seam. For Lucia or
+other opaque-session systems it does a session→userId lookup against your DB;
+or drop in your provider's backend SDK. Anything that returns `{ playerId }`
+works:
+
+```ts
+verify: async (req) => {
+  const session = await validateSession(req); // your DB / SDK
+  return session ? { playerId: session.userId } : null;
+};
+```
 
 ## Error handling
 
