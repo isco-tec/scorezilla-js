@@ -185,9 +185,9 @@ verify: verifyJwt({
 });
 ```
 
-**Anything else** — the `verify` callback is the universal seam. For Lucia or
-other opaque-session systems it does a session→userId lookup against your DB;
-or drop in your provider's backend SDK. Anything that returns `{ playerId }`
+**Anything else** — the `verify` callback is the universal seam. For
+Auth.js/NextAuth (encrypted JWE sessions), Better Auth, opaque session
+cookies, or a provider backend SDK, anything that returns `{ playerId }`
 works:
 
 ```ts
@@ -196,6 +196,8 @@ verify: async (req) => {
   return session ? { playerId: session.userId } : null;
 };
 ```
+
+Worked recipes for each of those live in [RECIPES.md](./RECIPES.md).
 
 ## Error handling
 

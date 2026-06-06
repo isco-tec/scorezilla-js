@@ -321,8 +321,9 @@ import {
 } from 'scorezilla/server';
 ```
 
-For non-JWKS auth (opaque sessions, provider backend SDKs), write your own
-`verify` — anything returning `{ playerId }` works.
+For non-JWKS auth (Auth.js JWE sessions, opaque sessions, provider backend
+SDKs), write your own `verify` — anything returning `{ playerId }` works. See
+[RECIPES.md](./RECIPES.md) for worked recipes.
 
 ## Advanced
 
