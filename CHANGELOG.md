@@ -1,5 +1,63 @@
 # Changelog
 
+## 0.3.0-next.2
+
+### Minor Changes
+
+- [#41](https://github.com/isco-tec/scorezilla-js/pull/41) [`e48a5a2`](https://github.com/isco-tec/scorezilla-js/commit/e48a5a2f09cd0f098e8466b51586bd4108bb5678) Thanks [@isco-tec](https://github.com/isco-tec)! - feat(server): `createScoreSubmitHandler()` — turnkey secure score submissions
+
+  A framework-agnostic factory in `scorezilla/server` that collapses the secure
+  (HMAC-signed) submission path from ~150 lines of boilerplate into a few. It
+  returns a standard `(Request) => Promise<Response>` handler — drop it into a
+  Cloudflare Worker, a Next.js route handler, Hono, Deno, or Bun.
+
+  ```ts
+  import { createScoreSubmitHandler } from 'scorezilla/server';
+
+  export const POST = createScoreSubmitHandler({
+    secretKey: process.env.SCOREZILLA_SECRET_KEY!,
+    boardId: process.env.SCOREZILLA_BOARD_ID!,
+    verify: async (req) => {
+      // your auth — any provider; return the trusted playerId
+      const user = await myAuth(req);
+      return user ? { playerId: user.id } : null;
+    },
+  });
+  ```
+
+  - The submitted `playerId` always comes from `verify` (the verified request),
+    never the request body — so ranking-sensitive boards aren't subject to the
+    client-authoritative submission of the public-key path.
+  - Owns body parsing/validation, HMAC signing, and `ScorezillaError` → HTTP
+    status mapping. Optional `cors` (OPTIONS preflight + reflected origin) and a
+    pre-verify `rateLimit` gate.
+  - Works with **any** auth via the `verify` callback (Supabase / Clerk / Auth0 /
+    Firebase JWTs, Lucia / opaque sessions, or a provider backend SDK). First-class
+    one-line verifiers (`verifySupabaseJwt`, `verifyJwt`) follow.
+
+- [#42](https://github.com/isco-tec/scorezilla-js/pull/42) [`7ca5976`](https://github.com/isco-tec/scorezilla-js/commit/7ca5976857cfff44cc3a3c155181cd9f6276aea0) Thanks [@isco-tec](https://github.com/isco-tec)! - feat(server): built-in `verifyJwt` + `verifySupabaseJwt` for `createScoreSubmitHandler`
+
+  Turn the common "verify a JWT, derive the player id" step into a one-liner.
+  Both return a `verify` function you drop straight into `createScoreSubmitHandler`.
+
+  ```ts
+  import { createScoreSubmitHandler, verifySupabaseJwt } from 'scorezilla/server';
+
+  export const POST = createScoreSubmitHandler({
+    secretKey: process.env.SCOREZILLA_SECRET_KEY!,
+    boardId: process.env.SCOREZILLA_BOARD_ID!,
+    verify: verifySupabaseJwt({ supabaseUrl: process.env.SUPABASE_URL! }),
+  });
+  ```
+
+  - `verifyJwt({ jwksUrl, issuer, audience, claim? })` — generic JWKS verifier,
+    plus first-class presets for the popular providers: `verifySupabaseJwt({
+supabaseUrl })`, `verifyClerkJwt({ issuer })`, `verifyAuth0Jwt({ domain,
+audience })`, and `verifyFirebaseIdToken({ projectId })`.
+  - **`jose` is an optional peer dependency**, loaded lazily via dynamic
+    `import()` — consumers who use the public-key client, the factory with their
+    own `verify`, or a provider backend SDK never install or load it.
+
 ## 0.3.0-next.1
 
 ### Minor Changes

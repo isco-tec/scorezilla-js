@@ -6,6 +6,8 @@
   },
   "changesets": [
     "google-oauth-provider",
-    "identity-presets-phase-1"
+    "identity-presets-phase-1",
+    "secure-submit-handler",
+    "secure-submit-verifiers"
   ]
 }
