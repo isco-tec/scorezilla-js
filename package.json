@@ -1,6 +1,6 @@
 {
   "name": "scorezilla",
-  "version": "0.3.0-next.0",
+  "version": "0.3.0-next.1",
   "type": "module",
   "license": "MIT",
   "sideEffects": false,
@@ -114,6 +114,7 @@
     "LICENSE",
     "CHANGELOG.md",
     "API.md",
+    "RECIPES.md",
     "VERSIONING.md",
     "COMPATIBILITY.md"
   ],
@@ -140,8 +141,17 @@
     "changeset:version": "changeset version",
     "prepublishOnly": "pnpm run clean && pnpm run typecheck && pnpm run test:unit && pnpm run build && pnpm run check:types-resolution && pnpm run size"
   },
+  "peerDependencies": {
+    "jose": "^5.9.0 || ^6.0.0"
+  },
+  "peerDependenciesMeta": {
+    "jose": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.3",
+    "jose": "^6.1.0",
     "@changesets/changelog-github": "0.7.0",
     "@changesets/cli": "2.31.0",
     "@eslint/js": "^9.15.0",

@@ -122,6 +122,83 @@ browser throws at module evaluation. Use environment variables (or your
 secret manager) to load the `sk_live_*` value; never embed it in a build
 that ships to clients.
 
+### Turnkey endpoint: `createScoreSubmitHandler`
+
+Wiring the secure path by hand means verifying your auth, deriving the player
+id from it, validating the body, signing, and mapping errors.
+`createScoreSubmitHandler` does all of that — you supply only your auth. It
+returns a standard `(Request) => Promise<Response>`, so it drops into a
+Cloudflare Worker, a Next.js route handler, Hono, Deno, or Bun.
+
+```ts
+import { createScoreSubmitHandler } from 'scorezilla/server';
+
+export const POST = createScoreSubmitHandler({
+  secretKey: process.env.SCOREZILLA_SECRET_KEY!,
+  boardId: process.env.SCOREZILLA_BOARD_ID!,
+  // The one app-specific bit: prove identity, return the TRUSTED playerId.
+  // The submitted playerId comes from here — never from the request body.
+  verify: async (req) => {
+    const user = await myAuth(req);
+    return user ? { playerId: user.id } : null;
+  },
+  cors: { origin: 'https://mygame.example' }, // omit for same-origin
+});
+```
+
+Your client just POSTs `{ score, metadata? }` (plus its auth header) to the
+endpoint; the handler signs and forwards it.
+
+**Supabase? One line.** Built-in verifiers do the JWKS verification for you.
+(`jose` is an optional peer dependency, loaded only when you use a built-in
+verifier — `npm i jose`.)
+
+```ts
+import { createScoreSubmitHandler, verifySupabaseJwt } from 'scorezilla/server';
+
+export const POST = createScoreSubmitHandler({
+  secretKey: process.env.SCOREZILLA_SECRET_KEY!,
+  boardId: process.env.SCOREZILLA_BOARD_ID!,
+  verify: verifySupabaseJwt({ supabaseUrl: process.env.SUPABASE_URL! }),
+});
+```
+
+**Clerk, Auth0, and Firebase have presets too:**
+
+```ts
+import { verifyClerkJwt, verifyAuth0Jwt, verifyFirebaseIdToken } from 'scorezilla/server';
+
+verify: verifyClerkJwt({ issuer: 'https://clerk.your-app.com' });
+verify: verifyAuth0Jwt({ domain: 'you.us.auth0.com', audience: 'your-api' });
+verify: verifyFirebaseIdToken({ projectId: 'your-firebase-project' });
+```
+
+**Any other JWKS provider** uses the generic `verifyJwt`:
+
+```ts
+import { verifyJwt } from 'scorezilla/server';
+
+verify: verifyJwt({
+  jwksUrl: 'https://your-issuer/.well-known/jwks.json',
+  issuer: 'https://your-issuer',
+  audience: 'your-api', // claim: 'sub' (default) → playerId
+});
+```
+
+**Anything else** — the `verify` callback is the universal seam. For
+Auth.js/NextAuth (encrypted JWE sessions), Better Auth, opaque session
+cookies, or a provider backend SDK, anything that returns `{ playerId }`
+works:
+
+```ts
+verify: async (req) => {
+  const session = await validateSession(req); // your DB / SDK
+  return session ? { playerId: session.userId } : null;
+};
+```
+
+Worked recipes for each of those live in [RECIPES.md](./RECIPES.md).
+
 ## Error handling
 
 Every failure path — HTTP non-2xx, network error, timeout, abort, JSON parse
