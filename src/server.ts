@@ -658,3 +658,21 @@ export type {
   SubmitScoreResponse,
   WindowAroundResponse,
 } from './types';
+
+// Built-in `verify` helpers for createScoreSubmitHandler (#211). `jose` is an
+// optional peer dependency, loaded lazily — only consumers of these pay for it.
+export {
+  verifyJwt,
+  verifySupabaseJwt,
+  verifyClerkJwt,
+  verifyAuth0Jwt,
+  verifyFirebaseIdToken,
+} from './verifiers';
+export type {
+  RequestVerifier,
+  VerifyJwtOptions,
+  VerifySupabaseJwtOptions,
+  VerifyClerkJwtOptions,
+  VerifyAuth0JwtOptions,
+  VerifyFirebaseIdTokenOptions,
+} from './verifiers';

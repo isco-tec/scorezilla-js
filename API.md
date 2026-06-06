@@ -1,10 +1,10 @@
 # Scorezilla SDK — API Reference
 
-> **Status:** v0.1.0 (public-key client). The HMAC server adapter
-> (`scorezilla/server`) ships in v0.2.0; React adapter in v0.3.0; Phaser in
-> v0.4.0. See [CHANGELOG.md](./CHANGELOG.md) and
-> [VERSIONING.md](./VERSIONING.md) for the release timeline and stability
-> guarantees.
+> **Status:** The public-key client and the HMAC server adapter
+> (`scorezilla/server` — incl. `createScoreSubmitHandler` + JWT verifiers) are
+> stable; the `scorezilla/identity` presets ship in 0.3.0. See
+> [CHANGELOG.md](./CHANGELOG.md) and [VERSIONING.md](./VERSIONING.md) for the
+> release timeline and stability guarantees.
 
 ## Quick start
 
@@ -50,8 +50,9 @@ type ScorezillaConfig = PublicKeyConfig /* | SecretKeyConfig — v0.2.0 */;
 
 - `publicKey`: `pk_<game-slug>_<base62-suffix>`. Issued by the operator
   dashboard. Safe to embed in browser code.
-- `secretKey` (v0.2.0+): `{ id: string, secret: 'sk_live_…' }`. Server-side
-  only. Used to compute HMAC signatures for the secure path.
+- `secretKey`: a single `sk_live_<keyId>_<random>` token (the keyId is embedded,
+  so you manage one value). Server-side only — used by the `scorezilla/server`
+  adapter to HMAC-sign the secure path. Never embed it in client code.
 
 ### Mutual exclusivity
 
@@ -254,6 +255,75 @@ try {
   throw e;
 }
 ```
+
+## Server adapter (`scorezilla/server`)
+
+The public-key client is client-authoritative — any player can submit any score
+from devtools. For ranking-sensitive boards, sign submissions server-side with a
+`sk_live_*` secret. Full recipes are in the
+[README](./README.md#server-side-hmac-scorezillaserver); the surface:
+
+### `Scorezilla` (server client)
+
+```ts
+import { Scorezilla } from 'scorezilla/server';
+
+const sz = new Scorezilla({
+  secretKey: process.env.SCOREZILLA_SECRET_KEY!, // sk_live_<keyId>_<random>
+});
+await sz.submitScore({ boardId, playerId, score, metadata });
+```
+
+Same methods as the public-key client (`submitScore`, `getLeaderboard`,
+`getPlayerRank`, `getWindowAround`); each request is HMAC-SHA256 signed and
+verified server-side. Server-only — importing it in a browser throws.
+
+### `createScoreSubmitHandler(config)`
+
+A framework-agnostic factory returning a `(Request) => Promise<Response>`
+handler (Cloudflare Workers, Next route handlers, Hono, Deno, Bun). You supply
+your auth via `verify`; it owns parsing/validation, signing, and error → HTTP
+mapping.
+
+```ts
+import { createScoreSubmitHandler, verifySupabaseJwt } from 'scorezilla/server';
+
+export const POST = createScoreSubmitHandler({
+  secretKey: process.env.SCOREZILLA_SECRET_KEY!,
+  boardId: process.env.SCOREZILLA_BOARD_ID!,
+  verify: verifySupabaseJwt({ supabaseUrl: process.env.SUPABASE_URL! }),
+});
+```
+
+| Option                                               | Type                                             | Notes                                                                               |
+| ---------------------------------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| `secretKey`                                          | `string`                                         | `sk_live_*`. Required.                                                              |
+| `boardId`                                            | `string`                                         | Required.                                                                           |
+| `verify`                                             | `(req) => { playerId, metadata? } \| null`       | Required. The submitted `playerId` always comes from here — never the request body. |
+| `parseSubmission?`                                   | `(req) => { score, metadata? } \| null`          | Defaults to JSON `{ score, metadata? }`.                                            |
+| `rateLimit?`                                         | `(req) => { ok, retryAfterSeconds? }`            | Runs **before** `verify`.                                                           |
+| `cors?`                                              | `{ origin, methods?, headers?, maxAgeSeconds? }` | OPTIONS preflight + reflected `Access-Control-Allow-Origin`.                        |
+| `baseUrl?` · `fetch?` · `maxRetries?` · `timeoutMs?` |                                                  | Pass-through to the server client.                                                  |
+
+### JWT verifiers
+
+Built-in `verify` helpers — each returns `(req) => Promise<{ playerId } | null>`.
+They require the optional peer dependency `jose` (loaded lazily; only consumers
+of a verifier install it).
+
+```ts
+import {
+  verifyJwt, // generic JWKS: { jwksUrl, issuer, audience, claim? }
+  verifySupabaseJwt, // { supabaseUrl }
+  verifyClerkJwt, // { issuer }
+  verifyAuth0Jwt, // { domain, audience }
+  verifyFirebaseIdToken, // { projectId }
+} from 'scorezilla/server';
+```
+
+For non-JWKS auth (Auth.js JWE sessions, opaque sessions, provider backend
+SDKs), write your own `verify` — anything returning `{ playerId }` works. See
+[RECIPES.md](./RECIPES.md) for worked recipes.
 
 ## Advanced
 

@@ -40,18 +40,23 @@ module.exports = [
     brotli: false,
   },
   {
-    name: 'ESM — `scorezilla/server` (HMAC adapter)',
+    name: 'ESM — `scorezilla/server` (HMAC adapter + secure-submit factory)',
     path: 'dist/server.js',
     import: '*',
-    limit: '6 KB',
+    // Bumped 6 -> 7 KB in 0.3.0: `createScoreSubmitHandler` (#211) and the
+    // built-in `verifyJwt`/`verifySupabaseJwt` verifiers landed here. `jose`
+    // is an optional peer dep loaded via dynamic import — it is NOT bundled,
+    // so this figure is just the thin factory + verifier wrappers. Server-side
+    // bundle; size matters less here than for the browser client.
+    limit: '7 KB',
     gzip: true,
     brotli: false,
   },
   {
-    name: 'CJS — `scorezilla/server` (HMAC adapter)',
+    name: 'CJS — `scorezilla/server` (HMAC adapter + secure-submit factory)',
     path: 'dist/server.cjs',
     import: '*',
-    limit: '6 KB',
+    limit: '7 KB',
     gzip: true,
     brotli: false,
   },

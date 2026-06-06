@@ -149,40 +149,55 @@ export const POST = createScoreSubmitHandler({
 Your client just POSTs `{ score, metadata? }` (plus its auth header) to the
 endpoint; the handler signs and forwards it.
 
-**It works with any auth — `verify` is the universal seam.** For example,
-Supabase:
+**Supabase? One line.** Built-in verifiers do the JWKS verification for you.
+(`jose` is an optional peer dependency, loaded only when you use a built-in
+verifier — `npm i jose`.)
 
 ```ts
-import { jwtVerify, createRemoteJWKSet } from 'jose';
+import { createScoreSubmitHandler, verifySupabaseJwt } from 'scorezilla/server';
 
-const jwks = createRemoteJWKSet(
-  new URL(`${process.env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`),
-);
+export const POST = createScoreSubmitHandler({
+  secretKey: process.env.SCOREZILLA_SECRET_KEY!,
+  boardId: process.env.SCOREZILLA_BOARD_ID!,
+  verify: verifySupabaseJwt({ supabaseUrl: process.env.SUPABASE_URL! }),
+});
+```
 
+**Clerk, Auth0, and Firebase have presets too:**
+
+```ts
+import { verifyClerkJwt, verifyAuth0Jwt, verifyFirebaseIdToken } from 'scorezilla/server';
+
+verify: verifyClerkJwt({ issuer: 'https://clerk.your-app.com' });
+verify: verifyAuth0Jwt({ domain: 'you.us.auth0.com', audience: 'your-api' });
+verify: verifyFirebaseIdToken({ projectId: 'your-firebase-project' });
+```
+
+**Any other JWKS provider** uses the generic `verifyJwt`:
+
+```ts
+import { verifyJwt } from 'scorezilla/server';
+
+verify: verifyJwt({
+  jwksUrl: 'https://your-issuer/.well-known/jwks.json',
+  issuer: 'https://your-issuer',
+  audience: 'your-api', // claim: 'sub' (default) → playerId
+});
+```
+
+**Anything else** — the `verify` callback is the universal seam. For
+Auth.js/NextAuth (encrypted JWE sessions), Better Auth, opaque session
+cookies, or a provider backend SDK, anything that returns `{ playerId }`
+works:
+
+```ts
 verify: async (req) => {
-  const token = req.headers.get('authorization')?.replace(/^Bearer /i, '');
-  if (!token) return null;
-  try {
-    const { payload } = await jwtVerify(token, jwks, {
-      issuer: `${process.env.SUPABASE_URL}/auth/v1`,
-      audience: 'authenticated',
-    });
-    return { playerId: payload.sub as string };
-  } catch {
-    return null;
-  }
+  const session = await validateSession(req); // your DB / SDK
+  return session ? { playerId: session.userId } : null;
 };
 ```
 
-Clerk, Auth0, Firebase, and most providers verify the same JWKS way (just a
-different URL/issuer/audience). For Lucia or other opaque-session systems,
-`verify` does a session→userId lookup against your DB. Bring your provider's
-backend SDK if you prefer — anything that returns `{ playerId }` works.
-
-> First-class one-line verifiers (`verifySupabaseJwt`, generic `verifyJwt`,
-> then Clerk/Auth0/Firebase) are on the roadmap — see
-> [scorezilla#211](https://github.com/isco-tec/scorezilla/issues/211). Until
-> they land, the `verify` callback above is all you need.
+Worked recipes for each of those live in [RECIPES.md](./RECIPES.md).
 
 ## Error handling
 
