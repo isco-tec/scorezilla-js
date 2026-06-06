@@ -60,6 +60,7 @@ import type {
   WindowAroundResponse,
 } from './types';
 import { defaultUserAgent } from './user-agent';
+import { ScorezillaError } from './errors';
 
 // ---------------------------------------------------------------------------
 // Public input types
@@ -363,6 +364,285 @@ function isRealBrowserEnvironment(): boolean {
     typeof g.Deno !== 'undefined' ||
     typeof g.Bun !== 'undefined';
   return !hasNodeLikeHost;
+}
+
+// ---------------------------------------------------------------------------
+// createScoreSubmitHandler — turnkey secure-submit endpoint (#211)
+// ---------------------------------------------------------------------------
+
+/** A value or a promise of it. */
+type Awaitable<T> = T | Promise<T>;
+
+/**
+ * The trusted identity produced by your `verify` callback. `playerId` is what
+ * gets submitted — derived from the *verified* request, never the request body.
+ */
+export interface VerifiedIdentity {
+  /** Stable, trusted per-player id (e.g. your auth user id). Avoid PII. */
+  readonly playerId: string;
+  /** Optional trusted metadata merged into the submission (wins over the body). */
+  readonly metadata?: Record<string, unknown> | undefined;
+}
+
+/** The score payload extracted from the request body. */
+export interface ParsedScoreSubmission {
+  readonly score: number;
+  readonly metadata?: Record<string, unknown> | undefined;
+}
+
+/** Decision returned by an optional pre-verify rate-limit gate. */
+export interface RateLimitDecision {
+  readonly ok: boolean;
+  readonly retryAfterSeconds?: number | undefined;
+}
+
+/** CORS config for the handler. Omit entirely for same-origin endpoints. */
+export interface ScoreSubmitCorsOptions {
+  /**
+   * Allowed origin(s): an exact string, an array of strings, a predicate, or
+   * `true` to reflect any `Origin`. `false` disables reflection.
+   */
+  readonly origin: string | readonly string[] | boolean | ((origin: string | null) => boolean);
+  /** Methods for the preflight. Default `['POST', 'OPTIONS']`. */
+  readonly methods?: readonly string[];
+  /** Request headers for the preflight. Default `['content-type', 'authorization']`. */
+  readonly headers?: readonly string[];
+  /** `Access-Control-Max-Age` seconds. Default `600`. */
+  readonly maxAgeSeconds?: number;
+}
+
+/** Configuration for {@link createScoreSubmitHandler}. */
+export interface CreateScoreSubmitHandlerConfig {
+  /** Your `sk_live_*` secret. Server-only — never ship to a browser. */
+  readonly secretKey: string;
+  /** The board UUID this handler submits to. */
+  readonly boardId: string;
+  /**
+   * Authenticate the request and return the **trusted** `playerId` (and any
+   * trusted metadata). Return `null` to reject (→ 401); throwing also rejects.
+   * Read identity from headers/cookies — the request **body** is reserved for
+   * the score payload (see `parseSubmission`). This callback is the universal
+   * seam: wire any auth (provider SDK, JWT verify, DB session lookup) here.
+   */
+  readonly verify: (req: Request) => Awaitable<VerifiedIdentity | null>;
+  /**
+   * Extract the score (+ optional client metadata) from the request. Defaults
+   * to JSON `{ score: number, metadata?: object }`. Return `null` (or throw)
+   * to reject as a bad request (→ 400). Note: a `playerId` in the body is
+   * always ignored — identity comes only from `verify`.
+   */
+  readonly parseSubmission?: (req: Request) => Awaitable<ParsedScoreSubmission | null>;
+  /**
+   * Optional gate that runs **before** `verify` (cheap defense — e.g. a per-IP
+   * rate limit, so unauthenticated spam can't drive auth/crypto work). Return
+   * `{ ok: false }` to reject with 429. Per-user limits belong inside `verify`.
+   */
+  readonly rateLimit?: (req: Request) => Awaitable<RateLimitDecision>;
+  /** Optional CORS handling (OPTIONS preflight + reflected `Access-Control-Allow-Origin`). */
+  readonly cors?: ScoreSubmitCorsOptions;
+  /** Override the API base URL (self-host / testing). */
+  readonly baseUrl?: string;
+  /** Inject a `fetch` (testing / custom transport). */
+  readonly fetch?: FetchImpl;
+  /** Max transport retries (default SDK policy). Set `0` to disable. */
+  readonly maxRetries?: number;
+  /** Per-attempt timeout in ms. */
+  readonly timeoutMs?: number;
+}
+
+/** The web-standard request handler returned by {@link createScoreSubmitHandler}. */
+export type ScoreSubmitHandler = (req: Request) => Promise<Response>;
+
+/**
+ * Build a turnkey, framework-agnostic secure score-submit endpoint.
+ *
+ * Returns a standard `(Request) => Promise<Response>` handler — drop it into a
+ * Cloudflare Worker, a Next.js route handler, Hono, Deno, Bun, or any runtime
+ * that speaks web `Request`/`Response`. You supply only what's app-specific:
+ * the `secretKey`, the `boardId`, and a `verify` callback that proves identity
+ * and returns the trusted `playerId`. The handler owns parsing/validation, the
+ * "playerId comes from `verify`, never the body" guarantee, signing via the
+ * HMAC server client, and error → HTTP mapping.
+ *
+ * **Construction patterns.** In Node/Next, secrets are in `process.env`, so
+ * build the handler once at module scope. In Cloudflare Workers, secrets live
+ * on the per-request `env` binding, so build it inside `fetch` (closing over
+ * `env`) — the construction is cheap (no I/O).
+ *
+ * @example Cloudflare Worker
+ * ```ts
+ * import { createScoreSubmitHandler } from 'scorezilla/server';
+ *
+ * export default {
+ *   fetch(req, env) {
+ *     const handler = createScoreSubmitHandler({
+ *       secretKey: env.SCOREZILLA_SECRET_KEY,
+ *       boardId: env.SCOREZILLA_BOARD_ID,
+ *       verify: async (r) => {
+ *         const user = await verifyMyAuth(r, env); // your auth: SDK / JWT / DB
+ *         return user ? { playerId: user.id } : null;
+ *       },
+ *       cors: { origin: 'https://mygame.example' },
+ *     });
+ *     return handler(req);
+ *   },
+ * };
+ * ```
+ *
+ * @since 0.3.0
+ * @stability stable
+ */
+export function createScoreSubmitHandler(
+  config: CreateScoreSubmitHandlerConfig,
+): ScoreSubmitHandler {
+  // Construct the signing client once; reuse across requests.
+  const sz = new Scorezilla({
+    secretKey: config.secretKey,
+    ...(config.baseUrl !== undefined ? { baseUrl: config.baseUrl } : {}),
+    ...(config.fetch !== undefined ? { fetch: config.fetch } : {}),
+    ...(config.maxRetries !== undefined ? { maxRetries: config.maxRetries } : {}),
+    ...(config.timeoutMs !== undefined ? { timeoutMs: config.timeoutMs } : {}),
+  });
+  const parse = config.parseSubmission ?? defaultParseSubmission;
+
+  return async (req: Request): Promise<Response> => {
+    const cors = config.cors ? buildCorsHeaders(config.cors, req.headers.get('Origin')) : {};
+
+    if (req.method === 'OPTIONS' && config.cors) {
+      return new Response(null, { status: 204, headers: cors });
+    }
+    if (req.method !== 'POST') {
+      return jsonResponse({ ok: false, error: 'method_not_allowed' }, 405, cors);
+    }
+
+    if (config.rateLimit) {
+      const decision = await config.rateLimit(req);
+      if (!decision.ok) {
+        const headers = { ...cors };
+        if (decision.retryAfterSeconds !== undefined) {
+          headers['Retry-After'] = String(decision.retryAfterSeconds);
+        }
+        return jsonResponse({ ok: false, error: 'rate_limited' }, 429, headers);
+      }
+    }
+
+    let identity: VerifiedIdentity | null;
+    try {
+      identity = await config.verify(req);
+    } catch {
+      // A throwing verify is treated as a rejection — it should catch its own
+      // errors. We never surface its message (it may carry token internals).
+      identity = null;
+    }
+    if (!identity || typeof identity.playerId !== 'string' || identity.playerId.length === 0) {
+      return jsonResponse({ ok: false, error: 'unauthorized' }, 401, cors);
+    }
+
+    let submission: ParsedScoreSubmission | null;
+    try {
+      submission = await parse(req);
+    } catch {
+      submission = null;
+    }
+    if (!submission || typeof submission.score !== 'number' || !Number.isFinite(submission.score)) {
+      return jsonResponse(
+        { ok: false, error: 'bad_request', message: 'invalid score submission' },
+        400,
+        cors,
+      );
+    }
+
+    const metadata = mergeMetadata(submission.metadata, identity.metadata);
+
+    try {
+      const result = await sz.submitScore({
+        boardId: config.boardId,
+        playerId: identity.playerId,
+        score: submission.score,
+        ...(metadata !== undefined ? { metadata } : {}),
+      });
+      return jsonResponse(
+        {
+          ok: true,
+          rank: result.rank,
+          totalEntries: result.totalEntries,
+          isPersonalBest: result.isPersonalBest,
+        },
+        200,
+        cors,
+      );
+    } catch (err: unknown) {
+      return mapSubmitError(err, cors);
+    }
+  };
+}
+
+async function defaultParseSubmission(req: Request): Promise<ParsedScoreSubmission | null> {
+  const raw: unknown = await req.json().catch(() => null);
+  if (!isPlainObject(raw)) return null;
+  const score = raw.score;
+  if (typeof score !== 'number' || !Number.isFinite(score)) return null;
+  return { score, metadata: isPlainObject(raw.metadata) ? raw.metadata : undefined };
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function mergeMetadata(
+  client: Record<string, unknown> | undefined,
+  verified: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!client && !verified) return undefined;
+  // Verified (trusted) values win over client-supplied ones on conflict.
+  return { ...(client ?? {}), ...(verified ?? {}) };
+}
+
+function jsonResponse(body: unknown, status: number, extra: Record<string, string>): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json; charset=utf-8', ...extra },
+  });
+}
+
+function mapSubmitError(err: unknown, cors: Record<string, string>): Response {
+  if (err instanceof ScorezillaError) {
+    if (err.isRateLimited()) {
+      const headers = { ...cors };
+      if (err.retryAfter !== undefined) headers['Retry-After'] = String(err.retryAfter);
+      return jsonResponse({ ok: false, error: 'rate_limited' }, 429, headers);
+    }
+    // Echo genuine client errors (e.g. out_of_bounds, invalid_input); treat
+    // everything else (5xx, network) as an upstream failure.
+    if (err.status >= 400 && err.status < 500) {
+      return jsonResponse({ ok: false, error: err.code, message: err.message }, err.status, cors);
+    }
+    return jsonResponse({ ok: false, error: 'upstream_error' }, 502, cors);
+  }
+  return jsonResponse({ ok: false, error: 'server_error' }, 500, cors);
+}
+
+function buildCorsHeaders(
+  cors: ScoreSubmitCorsOptions,
+  origin: string | null,
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Access-Control-Allow-Methods': (cors.methods ?? ['POST', 'OPTIONS']).join(', '),
+    'Access-Control-Allow-Headers': (cors.headers ?? ['content-type', 'authorization']).join(', '),
+    'Access-Control-Max-Age': String(cors.maxAgeSeconds ?? 600),
+    Vary: 'Origin',
+  };
+  if (origin !== null && isCorsOriginAllowed(cors.origin, origin)) {
+    headers['Access-Control-Allow-Origin'] = origin;
+  }
+  return headers;
+}
+
+function isCorsOriginAllowed(rule: ScoreSubmitCorsOptions['origin'], origin: string): boolean {
+  if (typeof rule === 'boolean') return rule;
+  if (typeof rule === 'string') return rule === origin;
+  if (typeof rule === 'function') return rule(origin);
+  return rule.includes(origin);
 }
 
 // Mirror the public-key client's pattern: re-export error + response
