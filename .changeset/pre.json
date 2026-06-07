@@ -5,8 +5,10 @@
     "scorezilla": "0.2.0"
   },
   "changesets": [
+    "github-oauth-provider",
     "google-oauth-provider",
     "identity-presets-phase-1",
+    "oauth-trust-boundary-docs",
     "secure-submit-handler",
     "secure-submit-verifiers"
   ]
