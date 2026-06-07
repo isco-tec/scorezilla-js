@@ -1,5 +1,164 @@
 # Changelog
 
+## 0.3.0
+
+### Minor Changes
+
+- [#45](https://github.com/isco-tec/scorezilla-js/pull/45) [`1a1e625`](https://github.com/isco-tec/scorezilla-js/commit/1a1e625cc6aff058071f922c7c5a619efa80ddc8) Thanks [@isco-tec](https://github.com/isco-tec)! - feat(identity): ship the GitHub provider for `useAuthProvider` (scorezilla#194)
+
+  The GitHub option is real (and final, per ADR 0009): a popup OAuth web flow
+  on the client plus a turnkey server-side token exchange.
+  - `useAuthProvider({ provider: 'github', clientId, exchangeUrl, storageKey })`
+    — opens the GitHub sign-in popup, validates the callback by origin + state,
+    resolves `github:<id>` (or `null` on decline). The provisional option shape
+    is finalized: `clientId`, `exchangeUrl`, and `storageKey` are all required.
+  - `createGitHubOAuthHandler({ clientId, clientSecret, allowedOrigin })` (new
+    in `scorezilla/server`) — the deployable callback endpoint: exchanges the
+    code (secret stays server-side), resolves the user id, posts it back to the
+    game's origin, closes the popup. The access token never reaches the browser.
+  - size-limit: server caps 7 → 8 KB (documented); new tree-shaking proof pins
+    that adapter-only consumers pay for neither factory.
+
+- [#39](https://github.com/isco-tec/scorezilla-js/pull/39) [`608137f`](https://github.com/isco-tec/scorezilla-js/commit/608137f2a880fd3b9031cde8de765a5262d6c334) Thanks [@isco-tec](https://github.com/isco-tec)! - feat(identity): ship the Google provider for `useAuthProvider`
+
+  `useAuthProvider({ provider: 'google', clientId, storageKey })` is now
+  implemented and **stable**. It wraps Google Identity Services ("One Tap"),
+  derives a stable, opaque player id from the account's `sub` claim
+  (`google:<sub>`), and persists it in `localStorage` so returning visitors are
+  recognized without signing in again.
+
+  ```ts
+  import { Scorezilla } from 'scorezilla';
+  import { useAuthProvider } from 'scorezilla/identity';
+
+  const player = await useAuthProvider({
+    provider: 'google',
+    clientId: 'YOUR_CLIENT_ID.apps.googleusercontent.com',
+    storageKey: 'mygame:player',
+  });
+
+  if (player) {
+    const sz = new Scorezilla({ publicKey: 'pk_…' });
+    await sz.submitScore({ boardId, playerId: player.id, score: 42 });
+    // player.signOut() clears the persisted id and disables Google auto-select.
+  }
+  ```
+
+  - **Resolves `null` when the player declines** or One Tap can't be shown — a
+    dismissed sign-in is not an error. It **rejects** only on genuine failures
+    (invalid args, script load failure, malformed credential).
+  - **`handle.source`** is `'signed-in'` for a fresh sign-in or `'restored'` when
+    the id was rehydrated from `localStorage` (a restored id is not a re-verified
+    live session).
+  - **Bring your own client ID.** The SDK never bundles Scorezilla-owned OAuth
+    credentials, so revocation and consent stay under your control.
+  - **Privacy.** Only the derived `sub`-based id is stored and transmitted on
+    score submission — never the Google credential, email, or profile.
+  - **Bundle.** The Google provider tree-shakes out for consumers who don't call
+    `useAuthProvider`; the Google Identity Services library is loaded at runtime
+    from `accounts.google.com`, never bundled.
+  - `useAuthProvider` is now async (replacing the `0.3.0-next.0` preview stub that
+    threw synchronously). Despite the `use*` name it is **not** a React hook.
+    Identity errors are plain `Error`/`TypeError` (not `ScorezillaError`), keeping
+    the `scorezilla/identity` subpath dependency-free. The host page's CSP must
+    allow `https://accounts.google.com`.
+  - The **GitHub** provider is not available yet — it ships in a follow-up and
+    will require a server-side token exchange (your backend or a Scorezilla
+    Workers proxy). Calling `useAuthProvider({ provider: 'github' })` rejects
+    with guidance until then.
+
+- [#36](https://github.com/isco-tec/scorezilla-js/pull/36) [`19c2dcc`](https://github.com/isco-tec/scorezilla-js/commit/19c2dcc14d2000551d80498813b075172c8f4d66) Thanks [@isco-tec](https://github.com/isco-tec)! - feat(identity): preset helpers for `scorezilla/identity` (Phase 1)
+
+  New subpath export: `scorezilla/identity`. Three identity-strategy
+  presets ship as `stable`; one OAuth helper ships as a preview stub.
+
+  **Stable in this release:**
+  - `useAnonymousPlayer({ storageKey })` — generates a UUID, persists in
+    localStorage, same browser keeps the same id across reloads. Returns
+    `{ id, forget() }`. Privacy-safe by default (no PII).
+  - `usePromptedPlayer({ storageKey, prompt })` — `window.prompt()` on
+    first run, persists to localStorage. Returns `{ id, forget() } | null`
+    (null when SSR, no `prompt`, or user cancels).
+  - `useServerAuthoritative()` — no-op marker for snippets using the
+    HMAC-signed secure path (`scorezilla/server`). The browser SDK does
+    no identity work; the server picks the value.
+
+  **Preview stub in this release (throws on call):**
+  - `useAuthProvider({ provider: 'google' | 'github' })` — OAuth-backed
+    identity. Full implementation (Google + GitHub for v1) ships in a
+    follow-up `next` release before the 0.3.0 latest promote.
+
+  Per [ADR 0003](https://github.com/isco-tec/scorezilla/blob/main/docs/adr/0003-mcp-identity-axis.md). All helpers document where data is stored and
+  what `forget()` / `signOut()` does NOT do (server-side history is
+  retained — call admin delete-player for full erasure).
+
+  Closes upstream tracking issue isco-tec/scorezilla#125 (Phase 1).
+
+- [#41](https://github.com/isco-tec/scorezilla-js/pull/41) [`e48a5a2`](https://github.com/isco-tec/scorezilla-js/commit/e48a5a2f09cd0f098e8466b51586bd4108bb5678) Thanks [@isco-tec](https://github.com/isco-tec)! - feat(server): `createScoreSubmitHandler()` — turnkey secure score submissions
+
+  A framework-agnostic factory in `scorezilla/server` that collapses the secure
+  (HMAC-signed) submission path from ~150 lines of boilerplate into a few. It
+  returns a standard `(Request) => Promise<Response>` handler — drop it into a
+  Cloudflare Worker, a Next.js route handler, Hono, Deno, or Bun.
+
+  ```ts
+  import { createScoreSubmitHandler } from 'scorezilla/server';
+
+  export const POST = createScoreSubmitHandler({
+    secretKey: process.env.SCOREZILLA_SECRET_KEY!,
+    boardId: process.env.SCOREZILLA_BOARD_ID!,
+    verify: async (req) => {
+      // your auth — any provider; return the trusted playerId
+      const user = await myAuth(req);
+      return user ? { playerId: user.id } : null;
+    },
+  });
+  ```
+
+  - The submitted `playerId` always comes from `verify` (the verified request),
+    never the request body — so ranking-sensitive boards aren't subject to the
+    client-authoritative submission of the public-key path.
+  - Owns body parsing/validation, HMAC signing, and `ScorezillaError` → HTTP
+    status mapping. Optional `cors` (OPTIONS preflight + reflected origin) and a
+    pre-verify `rateLimit` gate.
+  - Works with **any** auth via the `verify` callback (Supabase / Clerk / Auth0 /
+    Firebase JWTs, Lucia / opaque sessions, or a provider backend SDK). First-class
+    one-line verifiers (`verifySupabaseJwt`, `verifyJwt`) follow.
+
+- [#42](https://github.com/isco-tec/scorezilla-js/pull/42) [`7ca5976`](https://github.com/isco-tec/scorezilla-js/commit/7ca5976857cfff44cc3a3c155181cd9f6276aea0) Thanks [@isco-tec](https://github.com/isco-tec)! - feat(server): built-in `verifyJwt` + `verifySupabaseJwt` for `createScoreSubmitHandler`
+
+  Turn the common "verify a JWT, derive the player id" step into a one-liner.
+  Both return a `verify` function you drop straight into `createScoreSubmitHandler`.
+
+  ```ts
+  import { createScoreSubmitHandler, verifySupabaseJwt } from 'scorezilla/server';
+
+  export const POST = createScoreSubmitHandler({
+    secretKey: process.env.SCOREZILLA_SECRET_KEY!,
+    boardId: process.env.SCOREZILLA_BOARD_ID!,
+    verify: verifySupabaseJwt({ supabaseUrl: process.env.SUPABASE_URL! }),
+  });
+  ```
+
+  - `verifyJwt({ jwksUrl, issuer, audience, claim? })` — generic JWKS verifier,
+    plus first-class presets for the popular providers: `verifySupabaseJwt({
+supabaseUrl })`, `verifyClerkJwt({ issuer })`, `verifyAuth0Jwt({ domain,
+audience })`, and `verifyFirebaseIdToken({ projectId })`.
+  - **`jose` is an optional peer dependency**, loaded lazily via dynamic
+    `import()` — consumers who use the public-key client, the factory with their
+    own `verify`, or a provider backend SDK never install or load it.
+
+### Patch Changes
+
+- [#44](https://github.com/isco-tec/scorezilla-js/pull/44) [`e7fcc42`](https://github.com/isco-tec/scorezilla-js/commit/e7fcc4262b5d0a706d29f05333335f746307cb47) Thanks [@isco-tec](https://github.com/isco-tec)! - docs: make the `useAuthProvider` trust boundary explicit (scorezilla#213)
+
+  Client OAuth identity is sign-in convenience, not anti-forgery — the derived
+  id is computed client-side and submitted with the public key. New
+  trust-boundary notes on the `useAuthProvider` JSDoc and `AuthPlayerHandle`, a
+  "Player identity" section in the README, and a RECIPES.md recipe ("OAuth
+  identity and the secure path") routing ranking-sensitive boards to
+  `createScoreSubmitHandler` with a server-verified identity.
+
 ## 0.3.0-next.3
 
 ### Minor Changes
