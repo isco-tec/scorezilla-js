@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.3.0-next.3
+
+### Minor Changes
+
+- [#45](https://github.com/isco-tec/scorezilla-js/pull/45) [`1a1e625`](https://github.com/isco-tec/scorezilla-js/commit/1a1e625cc6aff058071f922c7c5a619efa80ddc8) Thanks [@isco-tec](https://github.com/isco-tec)! - feat(identity): ship the GitHub provider for `useAuthProvider` (scorezilla#194)
+
+  The GitHub option is real (and final, per ADR 0009): a popup OAuth web flow
+  on the client plus a turnkey server-side token exchange.
+  - `useAuthProvider({ provider: 'github', clientId, exchangeUrl, storageKey })`
+    — opens the GitHub sign-in popup, validates the callback by origin + state,
+    resolves `github:<id>` (or `null` on decline). The provisional option shape
+    is finalized: `clientId`, `exchangeUrl`, and `storageKey` are all required.
+  - `createGitHubOAuthHandler({ clientId, clientSecret, allowedOrigin })` (new
+    in `scorezilla/server`) — the deployable callback endpoint: exchanges the
+    code (secret stays server-side), resolves the user id, posts it back to the
+    game's origin, closes the popup. The access token never reaches the browser.
+  - size-limit: server caps 7 → 8 KB (documented); new tree-shaking proof pins
+    that adapter-only consumers pay for neither factory.
+
+### Patch Changes
+
+- [#44](https://github.com/isco-tec/scorezilla-js/pull/44) [`e7fcc42`](https://github.com/isco-tec/scorezilla-js/commit/e7fcc4262b5d0a706d29f05333335f746307cb47) Thanks [@isco-tec](https://github.com/isco-tec)! - docs: make the `useAuthProvider` trust boundary explicit (scorezilla#213)
+
+  Client OAuth identity is sign-in convenience, not anti-forgery — the derived
+  id is computed client-side and submitted with the public key. New
+  trust-boundary notes on the `useAuthProvider` JSDoc and `AuthPlayerHandle`, a
+  "Player identity" section in the README, and a RECIPES.md recipe ("OAuth
+  identity and the secure path") routing ranking-sensitive boards to
+  `createScoreSubmitHandler` with a server-verified identity.
+
 ## 0.3.0-next.2
 
 ### Minor Changes
