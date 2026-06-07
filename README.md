@@ -92,6 +92,35 @@ await sz.getWindowAround({ boardId, playerId, before?, after? });
 See [**API.md**](./API.md) for the full reference, including every response
 field, every error code, and advanced patterns.
 
+## Player identity (`scorezilla/identity`)
+
+Browser-side helpers that produce the `playerId` you pass to `submitScore`:
+
+```ts
+import {
+  useAnonymousPlayer, // mints a UUID, persists in localStorage — no prompt
+  usePromptedPlayer, // asks once for a nickname, saves it, silent thereafter
+  useAuthProvider, // OAuth sign-in (Google stable; GitHub in preview)
+} from 'scorezilla/identity';
+
+const player = await useAuthProvider({
+  provider: 'google',
+  clientId: 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com',
+  storageKey: 'mygame:player',
+});
+if (player) await sz.submitScore({ boardId, playerId: player.id, score: 9001 });
+```
+
+> **Trust boundary — all of these are client-authoritative.** `useAuthProvider`
+> proves the player's identity _to the browser_, not to the leaderboard: the
+> derived id is computed client-side and submitted with the public key, so it
+> is exactly as forgeable as any other public-key write. OAuth identity is
+> sign-in convenience for casual/vanity boards — **not anti-forgery**. For
+> competitive or ranking-sensitive boards, submit through the secure path
+> below (`createScoreSubmitHandler` + a server-verified identity); see
+> [RECIPES.md](./RECIPES.md) for the combined "OAuth identity + secure
+> submission" recipe.
+
 ## Server-side HMAC (`scorezilla/server`)
 
 Public-key submissions are client-authoritative — anyone with your `pk_` can

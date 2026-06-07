@@ -103,6 +103,9 @@ export type AuthIdSource = 'signed-in' | 'restored';
  * player id derived from the provider account (e.g. `google:<sub>`).
  * `signOut()` clears the persisted id and, where supported, disables the
  * provider's auto sign-in. It does **not** delete server-side score history.
+ *
+ * The id is **client-asserted** on submission — see the trust-boundary note
+ * on {@link useAuthProvider} before using it for ranking-sensitive boards.
  */
 export interface AuthPlayerHandle {
   readonly id: string;
@@ -302,6 +305,17 @@ export function useServerAuthoritative(): ServerAuthoritativeMarker {
 /**
  * OAuth-backed player identity. Signs the player in with the chosen provider
  * and resolves a stable, opaque `playerId` derived from their account.
+ *
+ * **Trust boundary — client-authoritative by design (#213).** Signing in
+ * proves the player's identity *to the browser*, not to the leaderboard: the
+ * derived id is computed client-side and submitted with the public key, so a
+ * submission carries exactly the same forgeability as any other public-key
+ * write. OAuth here buys sign-in convenience and a stable, human-recognizable
+ * id on casual / vanity boards — it is **not** anti-forgery. Competitive or
+ * ranking-sensitive boards must submit through the secure path instead:
+ * `createScoreSubmitHandler` in `scorezilla/server` with a server-verified
+ * identity (built-in Supabase / Clerk / Auth0 / Firebase verifiers, or your
+ * own session lookup) — see RECIPES.md ("OAuth identity and the secure path").
  *
  * Resolves to:
  * - an {@link AuthPlayerHandle} on success — `handle.source` distinguishes a
