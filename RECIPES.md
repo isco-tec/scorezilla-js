@@ -173,6 +173,45 @@ verify: async (req) => {
 },
 ```
 
+## OAuth identity and the secure path
+
+`useAuthProvider` (from `scorezilla/identity`) is **client-authoritative**: it
+proves the player's identity to the browser, not to your endpoint — the
+`google:<sub>` id is computed client-side and the helper never exposes the
+underlying credential, so there is nothing for `verify` to check. Combining it
+with the secure path looks like one of these:
+
+**Your app has real auth (recommended).** Trust comes from your auth platform;
+the OAuth handle is just sign-in UX. Verify the platform session as usual —
+the verified user id is the `playerId`:
+
+```ts
+// Identity for TRUST: the verified Supabase/Clerk/Auth0/Firebase session.
+verify: verifySupabaseJwt({ supabaseUrl: process.env.SUPABASE_URL! }),
+```
+
+If you want the OAuth display identity alongside, send it in the request
+body's `metadata` — it's treated as untrusted client data, which is exactly
+what it is.
+
+**OAuth-only, no backend auth.** You can still route submissions through
+`createScoreSubmitHandler` to keep `sk_*` off the client and gain payload
+validation + rate limiting — but identity stays client-asserted, and the
+endpoint should say so:
+
+```ts
+// ⚠️ Client-asserted: any client can claim any id. Acceptable for casual
+// boards; NOT for ranking-sensitive ones — add real auth for that.
+verify: async (req) => {
+  const playerId = req.headers.get('x-player-id'); // e.g. the google:<sub> id
+  return playerId ? { playerId } : null;
+},
+```
+
+There is no middle option: an id that arrives from the browser without a
+verifiable credential cannot be promoted to trusted server-side, no matter
+which OAuth provider produced it.
+
 ## Hardening checklist
 
 - **Never** derive `playerId` from the request body or an unverified header —
