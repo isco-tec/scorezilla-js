@@ -40,7 +40,7 @@ module.exports = [
     brotli: false,
   },
   {
-    name: 'ESM — `scorezilla/server` (HMAC adapter + secure-submit factory)',
+    name: 'ESM — `scorezilla/server` (HMAC adapter + factories)',
     path: 'dist/server.js',
     import: '*',
     // Bumped 6 -> 7 KB in 0.3.0: `createScoreSubmitHandler` (#211) and the
@@ -48,29 +48,44 @@ module.exports = [
     // is an optional peer dep loaded via dynamic import — it is NOT bundled,
     // so this figure is just the thin factory + verifier wrappers. Server-side
     // bundle; size matters less here than for the browser client.
-    limit: '7 KB',
+    // Bumped 7 -> 8 KB in 0.3.0-next.3: `createGitHubOAuthHandler` (#194) —
+    // the OAuth callback endpoint incl. its inline HTML page (~1.2 KB gz).
+    limit: '8 KB',
     gzip: true,
     brotli: false,
   },
   {
-    name: 'CJS — `scorezilla/server` (HMAC adapter + secure-submit factory)',
+    name: 'CJS — `scorezilla/server` (HMAC adapter + factories)',
     path: 'dist/server.cjs',
     import: '*',
-    limit: '7 KB',
+    limit: '8 KB',
     gzip: true,
     brotli: false,
   },
   {
-    name: 'ESM — `scorezilla/identity` full surface (incl. Google OAuth wrapper)',
+    name: 'ESM — `scorezilla/server` adapter only (tree-shaking proof: factories dropped)',
+    path: 'dist/server.js',
+    import: '{ Scorezilla }',
+    // Proves a consumer who only uses the HMAC client pays for neither
+    // `createScoreSubmitHandler` nor `createGitHubOAuthHandler` — same
+    // boundary-guard pattern as the identity core-only entry below. Cap sits
+    // just above the adapter's actual size; a factory leak (each ~1 KB+)
+    // trips it immediately.
+    limit: '5.5 KB',
+    gzip: true,
+    brotli: false,
+  },
+  {
+    name: 'ESM — `scorezilla/identity` full surface (incl. Google + GitHub OAuth wrappers)',
     path: 'dist/identity.js',
     import: '*',
     // OAuth (Google) shipped in 0.3.0-next.1 — the "real reason" the original
-    // 2 KB note anticipated. This worst-case figure pulls in the whole surface
-    // including the Google provider wrapper. The heavy Google Identity Services
-    // library itself is NOT bundled — it's fetched at runtime from
-    // accounts.google.com — so this delta is only the thin wrapper + a
-    // JWT-payload decode. Non-OAuth consumers don't pay for it; the
-    // tree-shaking-proof entry below gates that.
+    // 2 KB note anticipated. GitHub (popup + exchange-endpoint flow) joined in
+    // 0.3.0-next.3. This worst-case figure pulls in the whole surface incl.
+    // both provider wrappers. The heavy Google Identity Services library is
+    // NOT bundled (fetched at runtime), and the GitHub token exchange lives
+    // server-side — these are thin client orchestrators. Non-OAuth consumers
+    // don't pay for either; the tree-shaking-proof entry below gates that.
     limit: '3 KB',
     gzip: true,
     brotli: false,

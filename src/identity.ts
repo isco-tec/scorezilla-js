@@ -16,6 +16,7 @@
  */
 
 import { disableGoogleAutoSelect, isGoogleClientId, signInWithGoogle } from './identity/google';
+import { signInWithGitHub } from './identity/github';
 
 export interface AnonymousPlayerOptions {
   /** localStorage key under which the generated UUID is persisted. */
@@ -74,22 +75,36 @@ export interface GoogleAuthProviderOptions {
 /**
  * Options for the GitHub provider (`provider: 'github'`).
  *
- * **Not available yet** — ships in `scorezilla@0.3.0-next.2`. GitHub OAuth
- * cannot be completed securely in the browser alone (the token exchange needs
- * a client secret and GitHub's token endpoint sends no CORS headers), so the
- * GitHub provider will require a server-side token exchange (your backend or
- * a Scorezilla Workers proxy). Calling it today rejects.
+ * GitHub OAuth cannot be completed in the browser alone — the token exchange
+ * needs your OAuth app's client secret and GitHub's token endpoint sends no
+ * CORS headers. You therefore deploy a tiny exchange endpoint and point
+ * `exchangeUrl` at it. `createGitHubOAuthHandler` in `scorezilla/server` is
+ * that endpoint, turnkey:
  *
- * @experimental The option fields below are provisional and will be finalized
- * (e.g. `clientId` becoming required, plus a token-exchange-endpoint field)
- * when the provider lands in `0.3.0-next.2` — before the `0.3.0` stable cut.
+ * ```ts
+ * // Server — one line on any web runtime:
+ * export const GET = createGitHubOAuthHandler({
+ *   clientId: process.env.GITHUB_CLIENT_ID!,
+ *   clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+ *   allowedOrigin: 'https://mygame.example', // the GAME page's origin
+ * });
+ * ```
+ *
+ * Register the deployed `exchangeUrl` as the OAuth app's **callback URL** in
+ * GitHub's settings — GitHub redirects the sign-in popup there.
  */
 export interface GitHubAuthProviderOptions {
   readonly provider: 'github';
-  /** Reserved (provisional) — your GitHub OAuth app client ID. */
-  readonly clientId?: string;
-  /** Reserved (provisional) — localStorage key for the derived player id. */
-  readonly storageKey?: string;
+  /** Your GitHub OAuth app client ID (Settings → Developer settings). */
+  readonly clientId: string;
+  /**
+   * URL of your deployed token-exchange endpoint (absolute, or relative to
+   * the page). Its **origin** is the only origin the sign-in popup is
+   * allowed to complete from.
+   */
+  readonly exchangeUrl: string;
+  /** localStorage key under which the derived player id is persisted. */
+  readonly storageKey: string;
 }
 
 /** Discriminated union of {@link useAuthProvider} options, keyed on `provider`. */
@@ -342,14 +357,19 @@ export function useServerAuthoritative(): ServerAuthoritativeMarker {
  * must allow `https://accounts.google.com` (`script-src`, plus `frame-src` /
  * `connect-src` for One Tap).
  *
- * **GitHub** ships in `0.3.0-next.2` and currently rejects — see
- * {@link GitHubAuthProviderOptions}.
+ * **GitHub** (stable since `0.3.0`) runs a popup OAuth web flow against your
+ * deployed token-exchange endpoint (`createGitHubOAuthHandler` in
+ * `scorezilla/server` — GitHub's exchange needs your client secret, which
+ * never belongs in a browser). The derived id is `github:<numeric user id>`.
+ * Requires popups (call from a user gesture); a page setting
+ * `Cross-Origin-Opener-Policy: same-origin` severs the popup link — use
+ * `same-origin-allow-popups`. See {@link GitHubAuthProviderOptions}.
  *
- * **Privacy.** Only the derived `sub`-based id is stored and transmitted (on
- * score submission) — never the Google credential, email, or profile. The id
- * is persisted in browser localStorage and stored indefinitely in the
- * player's score-history rows. `signOut()` clears local state; for full
- * server-side erasure call the admin "delete player" endpoint.
+ * **Privacy.** Only the derived provider-account id is stored and transmitted
+ * (on score submission) — never the Google credential / GitHub access token,
+ * email, or profile. The id is persisted in browser localStorage and stored
+ * indefinitely in the player's score-history rows. `signOut()` clears local
+ * state; for full server-side erasure call the admin "delete player" endpoint.
  *
  * **Bundle.** The Google provider is a separate module that tree-shakes out
  * entirely for consumers who don't call `useAuthProvider` (the package is
@@ -388,13 +408,7 @@ export async function useAuthProvider(
     case 'google':
       return signInWithGoogleProvider(options);
     case 'github':
-      throw new Error(
-        'useAuthProvider: the GitHub provider is not available yet. It ships in ' +
-          'scorezilla@0.3.0-next.2 and will require a server-side token exchange ' +
-          '(your backend or a Scorezilla Workers proxy), because GitHub OAuth cannot ' +
-          'be completed securely in the browser alone. Until then use provider: "google", ' +
-          'or drive your own GitHub OAuth flow and pass the resulting id to submitScore.',
-      );
+      return signInWithGitHubProvider(options);
     default:
       throw new TypeError(
         `useAuthProvider: unknown provider ${JSON.stringify(
@@ -453,6 +467,46 @@ async function signInWithGoogleProvider(
   });
 
   googleSignInInFlight.set(storageKey, run);
+  return run;
+}
+
+// Same coalescing rationale as googleSignInInFlight: concurrent calls for
+// one storageKey share a single popup instead of racing two (browsers may
+// focus-steal or block the second; the player should see exactly one).
+const githubSignInInFlight = new Map<string, Promise<AuthPlayerHandle | null>>();
+
+async function signInWithGitHubProvider(
+  options: GitHubAuthProviderOptions,
+): Promise<AuthPlayerHandle | null> {
+  const clientId = requireNonEmptyString('useAuthProvider', 'clientId', options.clientId);
+  const exchangeUrl = requireNonEmptyString('useAuthProvider', 'exchangeUrl', options.exchangeUrl);
+  const storageKey = requireNonEmptyString('useAuthProvider', 'storageKey', options.storageKey);
+
+  // Return visit: same restored-id semantics (and the same trust caveats)
+  // as the Google provider — see signInWithGoogleProvider above.
+  const persisted = readPersisted(storageKey);
+  if (persisted !== null && persisted.length > 0) {
+    return makeAuthHandle(persisted, 'github', storageKey, 'restored');
+  }
+
+  if (!isBrowser()) {
+    throw new Error('useAuthProvider: GitHub sign-in requires a browser environment.');
+  }
+
+  const existing = githubSignInInFlight.get(storageKey);
+  if (existing) return existing;
+
+  const run = (async (): Promise<AuthPlayerHandle | null> => {
+    const userId = await signInWithGitHub({ clientId, exchangeUrl });
+    if (userId === null) return null;
+    const id = `github:${userId}`;
+    writePersisted(storageKey, id);
+    return makeAuthHandle(id, 'github', storageKey, 'signed-in');
+  })().finally(() => {
+    githubSignInInFlight.delete(storageKey);
+  });
+
+  githubSignInInFlight.set(storageKey, run);
   return run;
 }
 
