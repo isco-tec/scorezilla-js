@@ -106,7 +106,11 @@ export async function signInWithGitHub(params: GitHubSignInParams): Promise<stri
   // anything at us) is exactly what the origin pin + source marker + state
   // echo in `onMessage` below defend against — that validation is the sole
   // trust boundary between this window and the popup.
-  const popup = window.open(authorize.toString(), 'scorezilla-github-oauth', 'popup,width=600,height=700');
+  const popup = window.open(
+    authorize.toString(),
+    'scorezilla-github-oauth',
+    'popup,width=600,height=700',
+  );
   if (popup === null) {
     throw new Error(
       'useAuthProvider: the GitHub sign-in popup was blocked. Call ' +

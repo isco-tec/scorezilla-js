@@ -27,8 +27,10 @@ const describeBrowser = isBrowser ? describe : describe.skip;
 const STORAGE_KEY = 'mygame:gh-auth';
 const CLIENT_ID = 'Iv1_test1234567890ab';
 const EXCHANGE_URL = '/api/github-oauth';
-// jsdom origin — relative exchangeUrl resolves against this.
-const PAGE_ORIGIN = window.location.origin;
+// jsdom origin — relative exchangeUrl resolves against this. Guarded:
+// the bun CI lane runs this file WITHOUT jsdom (describeBrowser skips the
+// suites, but module top-level still executes).
+const PAGE_ORIGIN = isBrowser ? window.location.origin : '';
 
 const MESSAGE_SOURCE = 'scorezilla:github-oauth';
 
@@ -60,10 +62,7 @@ function installFakeOpen(opts: { blocked?: boolean } = {}): {
   return { openedUrl: () => captured, popup, openCalls: () => calls };
 }
 
-function postCallbackMessage(
-  data: unknown,
-  origin: string = PAGE_ORIGIN,
-): void {
+function postCallbackMessage(data: unknown, origin: string = PAGE_ORIGIN): void {
   window.dispatchEvent(new MessageEvent('message', { data, origin }));
 }
 

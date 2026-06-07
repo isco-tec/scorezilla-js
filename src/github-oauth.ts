@@ -110,7 +110,10 @@ export function createGitHubOAuthHandler(
     // GitHub-side denial (player cancelled on the consent screen): relay it
     // so the client resolves null. No exchange to attempt.
     if (ghError !== null) {
-      return callbackPage({ state, error: ghError === 'access_denied' ? 'access_denied' : 'exchange_failed' }, allowedOrigin);
+      return callbackPage(
+        { state, error: ghError === 'access_denied' ? 'access_denied' : 'exchange_failed' },
+        allowedOrigin,
+      );
     }
 
     if (code === null || !CODE_RE.test(code)) {
