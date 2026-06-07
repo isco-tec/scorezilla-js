@@ -100,7 +100,7 @@ Browser-side helpers that produce the `playerId` you pass to `submitScore`:
 import {
   useAnonymousPlayer, // mints a UUID, persists in localStorage — no prompt
   usePromptedPlayer, // asks once for a nickname, saves it, silent thereafter
-  useAuthProvider, // OAuth sign-in (Google stable; GitHub in preview)
+  useAuthProvider, // OAuth sign-in (Google + GitHub)
 } from 'scorezilla/identity';
 
 const player = await useAuthProvider({
@@ -109,6 +109,31 @@ const player = await useAuthProvider({
   storageKey: 'mygame:player',
 });
 if (player) await sz.submitScore({ boardId, playerId: player.id, score: 9001 });
+```
+
+**GitHub** needs one extra ingredient: GitHub's token exchange requires your
+OAuth app's client secret, so you deploy a one-line exchange endpoint
+(`createGitHubOAuthHandler` from `scorezilla/server`) and point the client at
+it:
+
+```ts
+// Client — opens a GitHub sign-in popup; resolves github:<id> (or null on decline).
+const player = await useAuthProvider({
+  provider: 'github',
+  clientId: 'YOUR_GITHUB_OAUTH_CLIENT_ID',
+  exchangeUrl: '/api/github-oauth',
+  storageKey: 'mygame:player',
+});
+
+// Server — deploy at /api/github-oauth and register that URL as the OAuth
+// app's callback URL on GitHub. The secret + access token never reach the browser.
+import { createGitHubOAuthHandler } from 'scorezilla/server';
+
+export const GET = createGitHubOAuthHandler({
+  clientId: process.env.GITHUB_CLIENT_ID!,
+  clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+  allowedOrigin: 'https://mygame.example', // your game page's origin
+});
 ```
 
 > **Trust boundary — all of these are client-authoritative.** `useAuthProvider`

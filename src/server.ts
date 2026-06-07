@@ -676,3 +676,8 @@ export type {
   VerifyAuth0JwtOptions,
   VerifyFirebaseIdTokenOptions,
 } from './verifiers';
+
+// GitHub OAuth callback endpoint — the server half of
+// `useAuthProvider({ provider: 'github' })` (ADR 0009, #194).
+export { createGitHubOAuthHandler } from './github-oauth';
+export type { CreateGitHubOAuthHandlerConfig, GitHubOAuthHandler } from './github-oauth';

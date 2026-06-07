@@ -177,8 +177,10 @@ verify: async (req) => {
 
 `useAuthProvider` (from `scorezilla/identity`) is **client-authoritative**: it
 proves the player's identity to the browser, not to your endpoint — the
-`google:<sub>` id is computed client-side and the helper never exposes the
-underlying credential, so there is nothing for `verify` to check. Combining it
+`google:<sub>` / `github:<id>` ids arrive at your endpoint from the client,
+with no credential attached for `verify` to check. (Yes, the GitHub flow's
+exchange endpoint verifies identity — but only inside the sign-in popup; at
+score-submit time the id is still client-asserted.) Combining `useAuthProvider`
 with the secure path looks like one of these:
 
 **Your app has real auth (recommended).** Trust comes from your auth platform;

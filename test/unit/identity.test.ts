@@ -157,16 +157,14 @@ describe('useServerAuthoritative', () => {
 });
 
 describe('useAuthProvider', () => {
-  it('rejects the github provider as not-yet-available (ships in next.2)', async () => {
-    await expect(useAuthProvider({ provider: 'github' })).rejects.toThrow(
-      /github provider is not available yet/i,
-    );
-  });
-
-  it('points github integrators at the server-side token exchange', async () => {
-    await expect(useAuthProvider({ provider: 'github' })).rejects.toThrow(
-      /server-side token exchange/i,
-    );
+  it('github without its required options rejects with TypeError', async () => {
+    // The full GitHub flow is covered in identity-github.test.ts; this
+    // pins the option-shape contract (clientId / exchangeUrl / storageKey
+    // are all required — finalized for the 0.3.0 stable cut, ADR 0009).
+    await expect(
+      // @ts-expect-error — testing runtime guard for invalid input
+      useAuthProvider({ provider: 'github' }),
+    ).rejects.toThrow(TypeError);
   });
 
   it('rejects an unknown provider', async () => {

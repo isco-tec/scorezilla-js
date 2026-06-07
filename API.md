@@ -325,6 +325,54 @@ For non-JWKS auth (Auth.js JWE sessions, opaque sessions, provider backend
 SDKs), write your own `verify` — anything returning `{ playerId }` works. See
 [RECIPES.md](./RECIPES.md) for worked recipes.
 
+### `createGitHubOAuthHandler(config)`
+
+The server half of `useAuthProvider({ provider: 'github' })` (see the
+identity section below): a `(Request) => Promise<Response>` callback endpoint
+that exchanges GitHub's OAuth `code` (the client secret stays server-side),
+resolves the user id, and hands `{ id }` back to the sign-in popup via a
+`postMessage` pinned to your game's origin. Deploy it anywhere that speaks
+web `Request`/`Response`, and register its URL as the OAuth app's callback
+URL on GitHub.
+
+| Option          | Type     | Notes                                                               |
+| --------------- | -------- | ------------------------------------------------------------------- |
+| `clientId`      | `string` | Your GitHub OAuth app client ID. Required.                          |
+| `clientSecret`  | `string` | Server-only. Required.                                              |
+| `allowedOrigin` | `string` | Exact origin of the game page (the `postMessage` target). Required. |
+| `fetch?`        |          | Inject a fetch (testing / custom transport).                        |
+
+## Identity presets (`scorezilla/identity`)
+
+Browser-side helpers producing the `playerId` for `submitScore`. All of them
+are **client-authoritative** — see the trust-boundary note in the
+[README](./README.md#player-identity-scorezillaidentity); for spoof-proof
+identity use the secure path above.
+
+```ts
+import {
+  useAnonymousPlayer, // { storageKey } → PlayerHandle (UUID, persisted)
+  usePromptedPlayer, // { storageKey, prompt } → Promise<PlayerHandle>
+  useServerAuthoritative, // () → marker; playerId comes from your server
+  useAuthProvider, // OAuth sign-in → Promise<AuthPlayerHandle | null>
+} from 'scorezilla/identity';
+```
+
+### `useAuthProvider(options)`
+
+Discriminated on `provider`:
+
+| Provider   | Options                                 | Flow                                                                  |
+| ---------- | --------------------------------------- | --------------------------------------------------------------------- |
+| `'google'` | `clientId`, `storageKey`, `autoSelect?` | Google Identity Services One Tap, client-only                         |
+| `'github'` | `clientId`, `exchangeUrl`, `storageKey` | Popup → your deployed `createGitHubOAuthHandler` endpoint (see above) |
+
+Resolves an `AuthPlayerHandle` (`{ id, provider, source, signOut() }`) — or
+`null` when the player **declines** (dismissed One Tap, cancelled on GitHub,
+closed the popup). Throws only on genuine failures (invalid arguments, popup
+blocked, exchange endpoint failure). `source: 'restored'` means the id was
+rehydrated from `localStorage` without a fresh provider interaction.
+
 ## Advanced
 
 ### Custom fetch / polyfills
