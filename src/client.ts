@@ -292,22 +292,19 @@ export class Scorezilla {
   /**
    * Fetch a single player's rank on a board.
    *
-   * Maps to `GET /v1/boards/:boardId/players/:playerId/rank`. Returns 404
-   * (`not_found`) if the player has no entry yet.
+   * Maps to `GET /v1/boards/:boardId/players/:playerId/rank`. "No entry yet"
+   * is a normal result, NOT an error: the response is `{ ranked: false }`
+   * (narrow on `ranked` before reading `rank`). A `not_found` is thrown only
+   * when the board itself doesn't exist.
    *
    * @example
    * ```ts
-   * try {
-   *   const { rank, score } = await sz.getPlayerRank({ boardId, playerId: 'alice' });
-   *   console.log(`Alice is rank ${rank} with score ${score}`);
-   * } catch (e) {
-   *   if (e instanceof ScorezillaError && e.isNotFound()) {
-   *     console.log('Alice has no submission on this board yet.');
-   *   } else throw e;
-   * }
+   * const r = await sz.getPlayerRank({ boardId, playerId: 'alice' });
+   * if (r.ranked) console.log(`Alice is rank ${r.rank} with score ${r.score}`);
+   * else console.log('Alice has no submission on this board yet.');
    * ```
    *
-   * @throws {ScorezillaError} `not_found` (player has no submission),
+   * @throws {ScorezillaError} `not_found` (board does not exist),
    *   `network_error`, `timeout`.
    * @since 0.1.0
    * @stability stable

@@ -257,7 +257,9 @@ export class Scorezilla {
     });
   }
 
-  /** Look up a single player's rank on a board. */
+  /** Look up a single player's rank on a board. "No entry yet" returns
+   *  `{ ranked: false }` (narrow on `ranked`); `not_found` is thrown only for
+   *  a missing board. */
   async getPlayerRank(input: GetPlayerRankInput): Promise<ApiSuccess<PlayerRankResponse>> {
     return this.#request<ApiSuccess<PlayerRankResponse>>({
       path: getPlayerRankPath(input.boardId, input.playerId),

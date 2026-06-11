@@ -156,8 +156,9 @@ for (const e of entries) console.log(`${e.rank}. ${e.playerId}: ${e.score}`);
 
 ### `getPlayerRank`
 
-`GET /v1/boards/:boardId/players/:playerId/rank`. Returns 404 (`not_found`) if
-the player has no submission yet.
+`GET /v1/boards/:boardId/players/:playerId/rank`. "No entry yet" is a normal
+result (`{ ranked: false }`), **not** an error — narrow on `ranked` before
+reading `rank`. A `not_found` (404) is thrown only when the board doesn't exist.
 
 ```ts
 interface GetPlayerRankInput {
@@ -165,15 +166,24 @@ interface GetPlayerRankInput {
   playerId: string;
 }
 
-interface PlayerRankResponse {
-  ok: true;
-  boardId: string;
-  playerId: string;
-  rank: number;
-  score: number;
-  submittedAt: number;
-  totalEntries: number;
-}
+type PlayerRankResponse =
+  | {
+      ok: true;
+      boardId: string;
+      playerId: string;
+      ranked: true;
+      rank: number;
+      score: number;
+      submittedAt: number;
+      totalEntries: number;
+    }
+  | { ok: true; boardId: string; playerId: string; ranked: false; rank: null; score: null };
+```
+
+```ts
+const r = await sz.getPlayerRank({ boardId, playerId });
+if (r.ranked) console.log(`Rank ${r.rank} of ${r.totalEntries}`);
+else console.log('No submission yet.');
 ```
 
 ### `getWindowAround`

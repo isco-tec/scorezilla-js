@@ -136,15 +136,38 @@ export interface LeaderboardResponse {
   entries: RankedEntry[];
 }
 
-/** Payload from `GET /v1/boards/:boardId/players/:playerId/rank`. */
-export interface PlayerRankResponse {
-  boardId: string;
-  playerId: string;
-  rank: number;
-  score: number;
-  submittedAt: number;
-  totalEntries: number;
-}
+/**
+ * Payload from `GET /v1/boards/:boardId/players/:playerId/rank`.
+ *
+ * Discriminated on `ranked`. "No entry yet" is a normal state, not an error:
+ * the API returns `200 { ranked: false }` (not a 404 — a 404 spammed an
+ * un-suppressable red console line for every benign "has this player scored?"
+ * check). A 404 is now reserved for a genuinely missing board.
+ *
+ * @example
+ * ```ts
+ * const r = await sz.getPlayerRank({ boardId, playerId });
+ * if (r.ranked) console.log(`Rank ${r.rank} of ${r.totalEntries}`);
+ * else console.log('No submission yet.');
+ * ```
+ */
+export type PlayerRankResponse =
+  | {
+      boardId: string;
+      playerId: string;
+      ranked: true;
+      rank: number;
+      score: number;
+      submittedAt: number;
+      totalEntries: number;
+    }
+  | {
+      boardId: string;
+      playerId: string;
+      ranked: false;
+      rank: null;
+      score: null;
+    };
 
 /** Payload from `GET /v1/boards/:boardId/players/:playerId/window`. */
 export interface WindowAroundResponse {
