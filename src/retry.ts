@@ -8,6 +8,7 @@
  */
 
 import { ScorezillaError } from './errors';
+import { randomUUID } from './uuid';
 
 /** Default cap on retry attempts (does not include the initial attempt). */
 export const DEFAULT_MAX_RETRIES = 2;
@@ -94,31 +95,26 @@ export function shouldRetryError(err: unknown): boolean {
 /**
  * Generate an idempotency key for a POST request.
  *
- * Note: the workplan refers to "UUID v7" but `crypto.randomUUID()` returns
- * v4 universally (Node 19+, all modern browsers, Workers, Bun, Deno). v4 is
- * the correct choice for an idempotency key — we need uniqueness, not
- * time-ordering. v7's time prefix offers no benefit for keys that live for
- * one request lifetime.
+ * Uses {@link randomUUID}, which returns v4 (uniqueness, not time-ordering —
+ * exactly what an idempotency key needs) and, crucially, falls back to a
+ * `getRandomValues`-derived UUID on plain-http origins where
+ * `crypto.randomUUID` is unavailable. Without that fallback every POST from a
+ * non-secure context would throw before the request was sent.
  *
- * Throws if `crypto.randomUUID` isn't available on the platform — that's
- * always a misconfiguration (the SDK declares Node ≥ 20 / modern browsers
- * in `engines`).
+ * Re-wraps the no-Web-Crypto-at-all case as a `ScorezillaError` so it stays
+ * inside the documented catch pattern (`if (!(e instanceof ScorezillaError))
+ * throw e;`). That case is unreachable on any runtime the SDK supports.
  */
 export function generateIdempotencyKey(): string {
-  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
-  if (!c || typeof c.randomUUID !== 'function') {
-    // Throw a `ScorezillaError`, not a plain `Error`. The documented catch
-    // pattern in README.md is `if (!(e instanceof ScorezillaError)) throw e;` —
-    // a plain `Error` here would escape that guard and bubble up as
-    // unhandled. `code: 'internal_error'` is the right category: this is
-    // a runtime misconfiguration, not an API failure.
+  try {
+    return randomUUID();
+  } catch {
     throw new ScorezillaError(
-      'scorezilla: globalThis.crypto.randomUUID is unavailable. ' +
-        'The SDK requires Node ≥ 20 or a modern browser. Check your runtime.',
+      'scorezilla: no Web Crypto RNG available (neither crypto.randomUUID nor ' +
+        'crypto.getRandomValues). The SDK requires Node ≥ 20 or a modern browser.',
       { status: 0, code: 'internal_error' },
     );
   }
-  return c.randomUUID();
 }
 
 /**
