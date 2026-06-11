@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.4.0
+
+### Minor Changes
+
+- [#57](https://github.com/isco-tec/scorezilla-js/pull/57) [`cba6107`](https://github.com/isco-tec/scorezilla-js/commit/cba61078b2a66bb4c9d0d911dee8dd776e7b69d5) Thanks [@isco-tec](https://github.com/isco-tec)! - `getPlayerRank` no longer treats "no entry yet" as an error.
+
+  The rank endpoint now returns `200 { ranked: false }` for a player with no submission instead of a `404` — a 404 forced an un-suppressable red console line in every integrator's devtools for a perfectly normal "has this player scored?" check. `PlayerRankResponse` is now a union discriminated on `ranked`: narrow on it before reading `rank`/`score`. A `not_found` is still thrown only when the board itself doesn't exist.
+
+  Migration:
+
+  ```ts
+  // Before
+  try {
+    const { rank } = await sz.getPlayerRank({ boardId, playerId });
+  } catch (e) {
+    if (e instanceof ScorezillaError && e.isNotFound()) {
+      /* no entry */
+    }
+  }
+
+  // After
+  const r = await sz.getPlayerRank({ boardId, playerId });
+  if (r.ranked) {
+    /* r.rank, r.score, … */
+  } else {
+    /* no entry yet */
+  }
+  ```
+
 ## 0.3.1
 
 ### Patch Changes
