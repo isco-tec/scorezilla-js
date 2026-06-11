@@ -426,6 +426,7 @@ describe('Scorezilla.getPlayerRank', () => {
         ok: true,
         boardId: 'b',
         playerId: 'alice',
+        ranked: true,
         rank: 1,
         score: 9001,
         submittedAt: 1,
@@ -434,17 +435,38 @@ describe('Scorezilla.getPlayerRank', () => {
     ) as unknown as FetchImpl;
     const sz = makeClient(fetchImpl);
     const r = await sz.getPlayerRank({ boardId: 'b', playerId: 'alice' });
-    expect(r.rank).toBe(1);
+    expect(r.ranked).toBe(true);
+    if (r.ranked) expect(r.rank).toBe(1); // narrow on the discriminator
     const [url] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(url).toBe('https://api.example.com/v1/boards/b/players/alice/rank');
   });
 
-  it('throws ScorezillaError.code = not_found when the player has no entry', async () => {
+  it('returns ranked:false (no throw) when the player has no entry yet', async () => {
+    // The API returns 200 + ranked:false for "no entry" — a normal state, not
+    // a 404. getPlayerRank must surface it as data, not an exception.
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        ok: true,
+        boardId: 'b',
+        playerId: 'noone',
+        ranked: false,
+        rank: null,
+        score: null,
+      }),
+    ) as unknown as FetchImpl;
+    const sz = makeClient(fetchImpl);
+    const r = await sz.getPlayerRank({ boardId: 'b', playerId: 'noone' });
+    expect(r.ranked).toBe(false);
+    if (!r.ranked) expect(r.rank).toBeNull();
+  });
+
+  it('still throws not_found when the board does not exist', async () => {
+    // A missing board is a genuine error and stays a 404.
     const fetchImpl = vi.fn(async () =>
       jsonResponse({ ok: false, error: 'not_found' }, { status: 404 }),
     ) as unknown as FetchImpl;
     const sz = makeClient(fetchImpl);
-    await expect(sz.getPlayerRank({ boardId: 'b', playerId: 'noone' })).rejects.toMatchObject({
+    await expect(sz.getPlayerRank({ boardId: 'ghost', playerId: 'alice' })).rejects.toMatchObject({
       code: 'not_found',
       status: 404,
     });

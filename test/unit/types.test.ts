@@ -84,17 +84,32 @@ describe('wire type fixtures (compile-time)', () => {
     expect(sample.entries.map((e: RankedEntry) => e.rank)).toEqual([1, 2, 3]);
   });
 
-  it('PlayerRankResponse', () => {
+  it('PlayerRankResponse — ranked:true branch', () => {
     const sample: ApiSuccess<PlayerRankResponse> = {
       ok: true,
       boardId: '7f1c-bid-abc',
       playerId: 'alice',
+      ranked: true,
       rank: 1,
       score: 9001,
       submittedAt: 1_700_000_000_000,
       totalEntries: 3,
     };
-    expect(sample.totalEntries).toBe(3);
+    // Narrow on the discriminator before reading rank-only fields.
+    expect(sample.ranked && sample.totalEntries).toBe(3);
+  });
+
+  it('PlayerRankResponse — ranked:false branch (no entry yet)', () => {
+    const sample: ApiSuccess<PlayerRankResponse> = {
+      ok: true,
+      boardId: '7f1c-bid-abc',
+      playerId: 'nobody',
+      ranked: false,
+      rank: null,
+      score: null,
+    };
+    expect(sample.ranked).toBe(false);
+    expect(sample.rank).toBeNull();
   });
 
   it('WindowAroundResponse', () => {
