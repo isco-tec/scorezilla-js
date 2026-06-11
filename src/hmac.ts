@@ -24,6 +24,8 @@
  * `scorezilla/server` (which calls into here).
  */
 
+import { randomUUID } from './uuid';
+
 const enc = new TextEncoder();
 
 /** Auth-scheme prefix. Mirrors the API's `AUTH_SCHEME` constant exactly. */
@@ -173,16 +175,10 @@ export async function buildHmacAuthHeader(args: {
  * twice the second is rejected as a replay.
  */
 export function generateNonce(): string {
-  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
-  if (!c || typeof c.randomUUID !== 'function') {
-    // Same posture as `generateIdempotencyKey` in retry.ts — runtime
-    // misconfiguration, surface a typed error consumers can branch on.
-    throw new Error(
-      'scorezilla: globalThis.crypto.randomUUID is unavailable. ' +
-        'The HMAC server adapter requires Node ≥ 20 or a modern runtime.',
-    );
-  }
-  return c.randomUUID();
+  // Shares the cross-context generator (see ./uuid): native randomUUID where
+  // available, getRandomValues-derived v4 otherwise. Throws only on a runtime
+  // with no Web Crypto RNG at all.
+  return randomUUID();
 }
 
 /** URL-safe base64 without padding. Matches the API's `base64UrlEncode`. */

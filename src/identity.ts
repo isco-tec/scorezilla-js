@@ -176,6 +176,11 @@ function mintUuid(): string {
   // browsers we target (Chrome 92+, Firefox 95+, Safari 15.4+) all have
   // crypto.randomUUID — this branch is reached only in non-browser
   // environments where useAnonymousPlayer shouldn't be called anyway.
+  //
+  // NOTE: intentionally NOT routed through ./uuid's getRandomValues fallback —
+  // doing so pulls that helper into the `scorezilla/identity` bundle and busts
+  // its size budget for no functional gain (this path never throws). The
+  // write-path fix (idempotency key) is where the fallback actually matters.
   return `anon-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 

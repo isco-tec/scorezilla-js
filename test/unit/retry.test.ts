@@ -181,12 +181,12 @@ describe('sleep', () => {
 
 // ─── Regression tests for the v0.1.0-next.0 review (issue #14) ─────────────
 
-describe('generateIdempotencyKey — throws ScorezillaError on runtime misconfig', () => {
-  it('throws a typed ScorezillaError when globalThis.crypto.randomUUID is missing', () => {
+describe('generateIdempotencyKey — throws ScorezillaError when no Web Crypto RNG exists', () => {
+  it('throws a typed ScorezillaError when globalThis.crypto is undefined', () => {
     // The documented catch pattern in README.md is
     //   if (!(e instanceof ScorezillaError)) throw e;
     // A plain `Error` here would escape that guard and bubble up as
-    // unhandled. This test pins the contract.
+    // unhandled. This test pins the contract for the no-RNG-at-all case.
     const original = globalThis.crypto;
     Object.defineProperty(globalThis, 'crypto', {
       value: undefined,
@@ -201,7 +201,7 @@ describe('generateIdempotencyKey — throws ScorezillaError on runtime misconfig
       const err = e as ScorezillaError;
       expect(err.code).toBe('internal_error');
       expect(err.status).toBe(0);
-      expect(err.message).toMatch(/randomUUID is unavailable/);
+      expect(err.message).toMatch(/no Web Crypto RNG available/);
     } finally {
       Object.defineProperty(globalThis, 'crypto', {
         value: original,
@@ -230,5 +230,47 @@ describe('generateIdempotencyKey — throws ScorezillaError on runtime misconfig
         writable: true,
       });
     }
+  });
+});
+
+// ─── Regression: plain-http origins (issue #53) ────────────────────────────
+// `crypto.randomUUID` is secure-context-only. A game on http://<LAN-ip> has
+// `crypto.getRandomValues` but NOT `crypto.randomUUID`, so the old code threw
+// on every POST. The fallback must produce a valid v4 instead of throwing.
+describe('generateIdempotencyKey — falls back on a non-secure context (#53)', () => {
+  const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  function withInsecureCrypto<T>(fn: () => T): T {
+    const original = globalThis.crypto;
+    // Mirror a plain-http browser: getRandomValues present, randomUUID absent.
+    Object.defineProperty(globalThis, 'crypto', {
+      value: { getRandomValues: (a: Uint8Array) => original.getRandomValues(a) },
+      configurable: true,
+      writable: true,
+    });
+    try {
+      return fn();
+    } finally {
+      Object.defineProperty(globalThis, 'crypto', {
+        value: original,
+        configurable: true,
+        writable: true,
+      });
+    }
+  }
+
+  it('returns a valid v4 UUID (does not throw) when randomUUID is unavailable', () => {
+    withInsecureCrypto(() => {
+      const key = generateIdempotencyKey();
+      expect(key).toMatch(UUID_V4);
+    });
+  });
+
+  it('still produces a fresh key each call via the fallback', () => {
+    withInsecureCrypto(() => {
+      const keys = new Set<string>();
+      for (let i = 0; i < 100; i++) keys.add(generateIdempotencyKey());
+      expect(keys.size).toBe(100);
+    });
   });
 });
