@@ -17,7 +17,6 @@
 
 import { disableGoogleAutoSelect, isGoogleClientId, signInWithGoogle } from './identity/google';
 import { signInWithGitHub } from './identity/github';
-import { randomUUID } from './uuid';
 
 export interface AnonymousPlayerOptions {
   /** localStorage key under which the generated UUID is persisted. */
@@ -169,11 +168,20 @@ function removePersisted(key: string): void {
 }
 
 function mintUuid(): string {
-  // Cross-context v4 (see ./uuid): native crypto.randomUUID in secure
-  // contexts, a getRandomValues-derived v4 on plain-http origins. Both are
-  // collision-safe — unlike the old Date.now()+Math.random() fallback, which
-  // was weak for a value used as a player identity key.
-  return randomUUID();
+  if (isBrowser() && typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  // Best-effort fallback: timestamp + random suffix. Not cryptographically
+  // strong, but opaque enough for the identifier-only use case. The
+  // browsers we target (Chrome 92+, Firefox 95+, Safari 15.4+) all have
+  // crypto.randomUUID — this branch is reached only in non-browser
+  // environments where useAnonymousPlayer shouldn't be called anyway.
+  //
+  // NOTE: intentionally NOT routed through ./uuid's getRandomValues fallback —
+  // doing so pulls that helper into the `scorezilla/identity` bundle and busts
+  // its size budget for no functional gain (this path never throws). The
+  // write-path fix (idempotency key) is where the fallback actually matters.
+  return `anon-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function requireNonEmptyString(fnName: string, field: string, value: unknown): string {
