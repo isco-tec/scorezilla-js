@@ -115,6 +115,9 @@ export interface RankedEntry {
   /** Milliseconds since epoch. */
   submittedAt: number;
   metadata?: Record<string, unknown>;
+  /** The player's public display name, when they've set one. Absent on older
+   *  entries and for players who submit without a name. */
+  name?: string;
 }
 
 /** Payload from `POST /v1/boards/:boardId/scores`. */

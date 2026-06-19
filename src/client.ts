@@ -78,6 +78,15 @@ export interface SubmitScoreInput extends CancellableInput {
    *  locally before send: no functions, no symbols, no circular refs;
    *  ≤ 4 KB UTF-8 bytes when JSON-stringified. */
   metadata?: Record<string, unknown> | undefined;
+  /** Optional public display name shown on the leaderboard. The API binds it to
+   *  this `playerId` and rejects (`name_taken`) a name held by a different
+   *  player on the board. 1-32 printable ASCII after trimming. */
+  name?: string | undefined;
+  /** Optional Cloudflare Turnstile token. Required only when the board has
+   *  Turnstile gating on AND this is a cross-origin submit. Obtained by the host
+   *  (e.g. via a hidden broker iframe on a trusted origin); the SDK just
+   *  forwards it. */
+  turnstileToken?: string | undefined;
 }
 
 /** Input for {@link Scorezilla.getLeaderboard}. */
@@ -253,6 +262,12 @@ export class Scorezilla {
     };
     if (input.metadata !== undefined) {
       body.metadata = input.metadata;
+    }
+    if (input.name !== undefined) {
+      body.name = input.name;
+    }
+    if (input.turnstileToken !== undefined) {
+      body.turnstileToken = input.turnstileToken;
     }
 
     return this.#request<ApiSuccess<SubmitScoreResponse>>({
