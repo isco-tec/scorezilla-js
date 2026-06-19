@@ -80,6 +80,16 @@
         "default": "./dist/identity.cjs"
       }
     },
+    "./headless": {
+      "import": {
+        "types": "./dist/headless.d.ts",
+        "default": "./dist/headless.js"
+      },
+      "require": {
+        "types": "./dist/headless.d.cts",
+        "default": "./dist/headless.cjs"
+      }
+    },
     "./phaser": {
       "import": {
         "types": "./dist/phaser.d.ts",
@@ -105,6 +115,9 @@
       ],
       "identity": [
         "./dist/identity.d.ts"
+      ],
+      "headless": [
+        "./dist/headless.d.ts"
       ]
     }
   },

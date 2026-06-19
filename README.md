@@ -92,6 +92,32 @@ await sz.getWindowAround({ boardId, playerId, before?, after? });
 See [**API.md**](./API.md) for the full reference, including every response
 field, every error code, and advanced patterns.
 
+## Headless, never-throws client (`scorezilla/headless`)
+
+For embedded games that want the **same API on every host** and never want a
+failed call to throw, wrap the client in the headless facade. Failures collapse
+to `null` (submit) or `[]` (leaderboard), so a dropped network call can't crash
+a game loop:
+
+```ts
+import { createHeadlessClient, isCrossOrigin } from 'scorezilla/headless';
+
+const sz = createHeadlessClient({ publicKey: 'pk_mygame_…' });
+
+// Never throws — `null` means "didn't land", any result means it did.
+const result = await sz.submit({ boardId, playerId, score: 4200, name: 'Ada' });
+if (result) console.log(`rank ${result.rank} of ${result.totalEntries}`);
+
+// Never throws — `[]` on any failure. Each entry has at least
+// { rank, playerId, name?, score }.
+const top = await sz.getLeaderboard({ boardId, top: 10 });
+```
+
+When a game is embedded **cross-site** (itch.io, a portal) and the board has
+Turnstile gating on, pass a `turnstileToken` your host obtains (e.g. via a
+hidden broker iframe on a trusted origin). Use `isCrossOrigin(homeOrigin)` to
+decide whether that path is needed; same-origin submits need nothing extra.
+
 ## Player identity (`scorezilla/identity`)
 
 Browser-side helpers that produce the `playerId` you pass to `submitScore`:

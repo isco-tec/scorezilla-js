@@ -104,4 +104,16 @@ module.exports = [
     gzip: true,
     brotli: false,
   },
+  {
+    name: 'ESM — `scorezilla/headless` (never-throws wrapper)',
+    path: 'dist/headless.js',
+    import: '*',
+    // Thin never-throws facade over the public-key client. With splitting:false
+    // each subpath is self-contained, so this re-bundles the client (~6 KB) plus
+    // the small wrapper + isCrossOrigin helper. A headless-only consumer loads
+    // ONLY this — they never also pull `index`.
+    limit: '6.5 KB',
+    gzip: true,
+    brotli: false,
+  },
 ];
