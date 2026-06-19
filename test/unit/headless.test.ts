@@ -10,7 +10,7 @@
  *   • isCrossOrigin() origin comparison + fail-safe branches
  */
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createHeadlessClient, isCrossOrigin } from '../../src/headless';
 import type { FetchImpl } from '../../src/transport';
 
@@ -129,29 +129,32 @@ describe('createHeadlessClient — getLeaderboard', () => {
 });
 
 describe('isCrossOrigin', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it('is false when the page origin matches the home origin', () => {
-    vi.stubGlobal('location', { origin: 'https://game.example.com' });
-    expect(isCrossOrigin('https://game.example.com')).toBe(false);
+  // The current origin is passed explicitly (not stubbed onto the global) so the
+  // logic is exercised identically across runtimes — `location` is a special,
+  // non-configurable global in some of them.
+  it('is false when the current origin matches the home origin', () => {
+    expect(isCrossOrigin('https://game.example.com', 'https://game.example.com')).toBe(false);
     // A path/trailing slash on the home URL doesn't matter — only the origin.
-    expect(isCrossOrigin('https://game.example.com/play')).toBe(false);
+    expect(isCrossOrigin('https://game.example.com/play', 'https://game.example.com')).toBe(false);
   });
 
   it('is true when embedded on a different origin', () => {
-    vi.stubGlobal('location', { origin: 'https://itch.io' });
-    expect(isCrossOrigin('https://game.example.com')).toBe(true);
+    expect(isCrossOrigin('https://game.example.com', 'https://itch.io')).toBe(true);
   });
 
-  it('is false outside a browser (no location)', () => {
-    vi.stubGlobal('location', undefined);
-    expect(isCrossOrigin('https://game.example.com')).toBe(false);
+  it('is false when there is no current origin (non-browser / SSR)', () => {
+    // Pass `null` for "no origin" — passing `undefined` would re-trigger the
+    // default (read the page origin), which is the documented browser behavior.
+    expect(isCrossOrigin('https://game.example.com', null)).toBe(false);
   });
 
   it('is false (fail-safe) when the home origin is not a valid URL', () => {
-    vi.stubGlobal('location', { origin: 'https://game.example.com' });
-    expect(isCrossOrigin('not-a-url')).toBe(false);
+    expect(isCrossOrigin('not-a-url', 'https://game.example.com')).toBe(false);
+  });
+
+  it('defaults the current origin to the page and returns a boolean', () => {
+    // Smoke: with no explicit current origin it reads globalThis.location (or
+    // treats its absence as same-origin) and never throws.
+    expect(typeof isCrossOrigin('https://game.example.com')).toBe('boolean');
   });
 });

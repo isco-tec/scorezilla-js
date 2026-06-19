@@ -94,20 +94,24 @@ export function createHeadlessClient(config: PublicKeyConfig): HeadlessClient {
 }
 
 /**
- * True when running in a browser whose origin differs from `homeOrigin` — i.e.
- * the game is embedded cross-site (itch.io, a portal) rather than on its own
- * first-party host. Use it to decide whether the cross-origin token path (a
- * device-token identity + Turnstile + the board's origin allowlist) is needed.
+ * True when the current origin differs from `homeOrigin` — i.e. the game is
+ * embedded cross-site (itch.io, a portal) rather than on its own first-party
+ * host. Use it to decide whether the cross-origin token path (a device-token
+ * identity + Turnstile + the board's origin allowlist) is needed.
  *
- * Returns `false` outside a browser (no `location`), where the concept doesn't
- * apply, and `false` if `homeOrigin` can't be parsed (fail safe — don't force
- * the heavier path on a config typo).
+ * `currentOrigin` defaults to the page's (`globalThis.location.origin`); pass it
+ * explicitly for SSR or tests. Returns `false` when there's no current origin
+ * (non-browser, where the concept doesn't apply) and `false` if `homeOrigin`
+ * can't be parsed (fail safe — don't force the heavier path on a config typo).
  */
-export function isCrossOrigin(homeOrigin: string): boolean {
-  const loc = (globalThis as { location?: { origin?: string } }).location;
-  if (!loc || typeof loc.origin !== 'string') return false;
+export function isCrossOrigin(
+  homeOrigin: string,
+  currentOrigin: string | null | undefined = (globalThis as { location?: { origin?: string } })
+    .location?.origin,
+): boolean {
+  if (!currentOrigin) return false;
   try {
-    return loc.origin !== new URL(homeOrigin).origin;
+    return currentOrigin !== new URL(homeOrigin).origin;
   } catch {
     return false;
   }
