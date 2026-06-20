@@ -39,6 +39,18 @@ export type ScorezillaErrorCode =
    *  the tenant is `'suspended'` (see {@link UsageCapReason}). The error body
    *  carries `tier`, `cap`, `count`, `period`, `resetsAt`. */
   | 'usage_cap_exceeded'
+  /** 403 — the player is on this board's denylist (banned by the game owner). */
+  | 'player_banned'
+  /** 409 — the requested display `name` is already held by a different player. */
+  | 'name_taken'
+  /** 409 — the board is archived (frozen); writes are rejected. */
+  | 'board_archived'
+  /** 403 — the board requires a Cloudflare Turnstile token and none was sent. */
+  | 'turnstile_required'
+  /** 403 — the supplied Turnstile token failed verification. */
+  | 'turnstile_failed'
+  /** 403 — the request Origin is not in the board's embed allowlist. */
+  | 'origin_not_allowed'
   | (string & {});
 
 /** Reason sub-classifier on `out_of_bounds` errors. Open union — see {@link ScorezillaErrorCode}. */

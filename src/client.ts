@@ -247,7 +247,11 @@ export class Scorezilla {
    * @throws {ScorezillaError} `unauthorized` (bad publicKey), `forbidden`
    *   (key not bound to this board), `not_found` (board doesn't exist),
    *   `out_of_bounds` (score outside board's min/max), `rate_limited`
-   *   (Layer 2/3 throttle hit), `invalid_input`, `network_error`, `timeout`.
+   *   (Layer 2/3 throttle hit), `player_banned` (denylisted on this board),
+   *   `name_taken` (display name held by another player), `turnstile_required`
+   *   / `turnstile_failed` (Turnstile-gated board), `origin_not_allowed`
+   *   (Origin not in the board's allowlist), `invalid_input`, `network_error`,
+   *   `timeout`.
    * @since 0.1.0
    * @stability stable
    */
