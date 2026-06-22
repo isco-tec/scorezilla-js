@@ -111,22 +111,25 @@ Violations throw a plain `Error` (not `ScorezillaError`) before any network call
 
 #### Errors
 
-| Code                             | Status | Meaning                                                                                                                                               |
-| -------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `unauthorized`                   | 401    | Invalid `publicKey`.                                                                                                                                  |
-| `forbidden`                      | 403    | Key is not bound to this `boardId`.                                                                                                                   |
-| `origin_not_allowed`             | 403    | Request `Origin` is not in the board's allowlist (configured in the dashboard). Gates browser submits only — server-to-server calls send no `Origin`. |
-| `player_banned`                  | 403    | The player is on this board's denylist (banned by the game owner).                                                                                    |
-| `turnstile_required`             | 403    | The board requires a Cloudflare Turnstile token and none was sent.                                                                                    |
-| `turnstile_failed`               | 403    | The supplied Turnstile token failed verification.                                                                                                     |
-| `turnstile_hostname_mismatch`    | 403    | The Turnstile token was solved on an origin not allowed for this game.                                                                                |
-| `not_found`                      | 404    | Board doesn't exist.                                                                                                                                  |
-| `out_of_bounds`                  | 422    | Score outside the board's `[minScore, maxScore]`. `error.reason` is `'below_min'` or `'above_max'`; `error.bound` is the limit.                       |
-| `rate_limited`                   | 429    | Throttled. `error.retryAfter` (seconds), `error.layer`.                                                                                               |
-| `invalid_input` / `invalid_json` | 400    | Malformed body.                                                                                                                                       |
-| `network_error`                  | 0      | Could not reach the API.                                                                                                                              |
-| `timeout`                        | 0      | Request exceeded `timeoutMs`.                                                                                                                         |
-| `aborted`                        | 0      | Caller-provided `AbortSignal` fired.                                                                                                                  |
+| Code                             | Status | Meaning                                                                                                                                                                |
+| -------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `unauthorized`                   | 401    | Invalid `publicKey`.                                                                                                                                                   |
+| `usage_cap_exceeded`             | 402    | Tenant exceeded their monthly submission cap (`error.reason` `'over_cap'`) or is suspended (`'suspended'`). Body carries `tier`, `cap`, `count`, `period`, `resetsAt`. |
+| `forbidden`                      | 403    | Key is not bound to this `boardId`.                                                                                                                                    |
+| `origin_not_allowed`             | 403    | Request `Origin` is not in the board's allowlist (configured in the dashboard). Gates browser submits only — server-to-server calls send no `Origin`.                  |
+| `player_banned`                  | 403    | The player is on this board's denylist (banned by the game owner).                                                                                                     |
+| `turnstile_required`             | 403    | The board requires a Cloudflare Turnstile token and none was sent.                                                                                                     |
+| `turnstile_failed`               | 403    | The supplied Turnstile token failed verification.                                                                                                                      |
+| `turnstile_hostname_mismatch`    | 403    | The Turnstile token was solved on an origin not allowed for this game.                                                                                                 |
+| `not_found`                      | 404    | Board doesn't exist.                                                                                                                                                   |
+| `out_of_bounds`                  | 422    | Score outside the board's `[minScore, maxScore]`. `error.reason` is `'below_min'` or `'above_max'`; `error.bound` is the limit.                                        |
+| `rate_limited`                   | 429    | Throttled. `error.retryAfter` (seconds), `error.layer`.                                                                                                                |
+| `board_archived`                 | 409    | The board is archived (frozen) — writes are rejected.                                                                                                                  |
+| `name_taken`                     | 409    | The requested display `name` is already held by a different player.                                                                                                    |
+| `invalid_input` / `invalid_json` | 400    | Malformed body.                                                                                                                                                        |
+| `network_error`                  | 0      | Could not reach the API.                                                                                                                                               |
+| `timeout`                        | 0      | Request exceeded `timeoutMs`.                                                                                                                                          |
+| `aborted`                        | 0      | Caller-provided `AbortSignal` fired.                                                                                                                                   |
 
 ### `getLeaderboard`
 
