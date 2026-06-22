@@ -119,6 +119,7 @@ Violations throw a plain `Error` (not `ScorezillaError`) before any network call
 | `player_banned`                  | 403    | The player is on this board's denylist (banned by the game owner).                                                                                    |
 | `turnstile_required`             | 403    | The board requires a Cloudflare Turnstile token and none was sent.                                                                                    |
 | `turnstile_failed`               | 403    | The supplied Turnstile token failed verification.                                                                                                     |
+| `turnstile_hostname_mismatch`    | 403    | The Turnstile token was solved on an origin not allowed for this game.                                                                                |
 | `not_found`                      | 404    | Board doesn't exist.                                                                                                                                  |
 | `out_of_bounds`                  | 422    | Score outside the board's `[minScore, maxScore]`. `error.reason` is `'below_min'` or `'above_max'`; `error.bound` is the limit.                       |
 | `rate_limited`                   | 429    | Throttled. `error.retryAfter` (seconds), `error.layer`.                                                                                               |

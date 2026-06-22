@@ -49,6 +49,8 @@ export type ScorezillaErrorCode =
   | 'turnstile_required'
   /** 403 — the supplied Turnstile token failed verification. */
   | 'turnstile_failed'
+  /** 403 — the Turnstile token was solved on an origin not allowed for this game. */
+  | 'turnstile_hostname_mismatch'
   /** 403 — the request Origin is not in the board's embed allowlist. */
   | 'origin_not_allowed'
   | (string & {});
