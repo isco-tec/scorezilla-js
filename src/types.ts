@@ -39,6 +39,10 @@ export type ScorezillaErrorCode =
    *  the tenant is `'suspended'` (see {@link UsageCapReason}). The error body
    *  carries `tier`, `cap`, `count`, `period`, `resetsAt`. */
   | 'usage_cap_exceeded'
+  /** 402 — the board's tenant is suspended. Returned by the READ paths
+   *  (`getLeaderboard` / `getPlayerRank` / `getWindowAround`); the submit path
+   *  instead returns `usage_cap_exceeded` with `reason: 'suspended'`. */
+  | 'tenant_suspended'
   /** 403 — the player is on this board's denylist (banned by the game owner). */
   | 'player_banned'
   /** 409 — the requested display `name` is already held by a different player. */

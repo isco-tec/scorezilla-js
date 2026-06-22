@@ -159,6 +159,12 @@ const { entries } = await sz.getLeaderboard({ boardId, top: 25 });
 for (const e of entries) console.log(`${e.rank}. ${e.playerId}: ${e.score}`);
 ```
 
+> **Read-path errors.** The read methods (`getLeaderboard`, `getPlayerRank`,
+> `getWindowAround`) share the codes in the [`submitScore` table](#errors)
+> (minus the submit-only ones), and add one: **`tenant_suspended`** (`402`) when
+> the board's tenant is suspended. (On the submit path that same condition
+> surfaces as `usage_cap_exceeded` with `reason: 'suspended'`.)
+
 ### `getPlayerRank`
 
 `GET /v1/boards/:boardId/players/:playerId/rank`. "No entry yet" is a normal
