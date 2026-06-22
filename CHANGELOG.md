@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.1
+
+### Patch Changes
+
+- [#66](https://github.com/isco-tec/scorezilla-js/pull/66) [`746d599`](https://github.com/isco-tec/scorezilla-js/commit/746d599880a347ca656b233a9241dc6b8cc68926) Thanks [@isco-tec](https://github.com/isco-tec)! - Add `turnstile_hostname_mismatch` to the `ScorezillaErrorCode` union — a 403 the API can return when a Turnstile token is solved on an origin not allowed for the game. It previously fell through the open union as an untyped string; now it's a first-class code (with JSDoc) and documented in the API reference alongside the other 403 codes.
+
+- [#67](https://github.com/isco-tec/scorezilla-js/pull/67) [`2966433`](https://github.com/isco-tec/scorezilla-js/commit/2966433d66883fb3eee04596aefbba5d1677c436) Thanks [@isco-tec](https://github.com/isco-tec)! - Add `tenant_suspended` to the `ScorezillaErrorCode` union — a `402` the read paths (`getLeaderboard` / `getPlayerRank` / `getWindowAround`) return when the board's tenant is suspended. It previously fell through the open union as an untyped string; now it's typed (with JSDoc) and documented in the API reference. (On submit, the same condition still surfaces as `usage_cap_exceeded` with `reason: 'suspended'`.)
+
+- [#62](https://github.com/isco-tec/scorezilla-js/pull/62) [`90b277a`](https://github.com/isco-tec/scorezilla-js/commit/90b277afb745c29fbdcca46cd6dbd14479229c2f) Thanks [@isco-tec](https://github.com/isco-tec)! - Add the newer server error codes to the `ScorezillaErrorCode` union so consumers get autocomplete + type-checking when branching on them: `player_banned`, `name_taken`, `board_archived`, `turnstile_required`, `turnstile_failed`, `origin_not_allowed`. (Runtime behavior is unchanged — the union's open tail already carried these strings at runtime.) The `submitScore` `@throws` JSDoc now lists `player_banned` and `name_taken` as possible outcomes.
+
 ## 0.5.0
 
 ### Minor Changes
