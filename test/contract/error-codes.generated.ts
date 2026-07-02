@@ -3,7 +3,7 @@
 // Regenerate via the cross-repo contract-sync (or `node scripts/sync-contract.mjs`
 // in the monorepo). The drift guard in this repo recomputes source-sha256 below
 // and fails if this file was edited by hand or drifted from the SoT.
-// source-sha256: ccc7a95ac2e39adb64c77bbf778d13ec98aa73927de0c7edd7c789914a16cc05
+// source-sha256: 7928946729e4e677d1d6a51b5cedb648636546ab1cded490fb758f4aafb78835
 
 /**
  * Canonical registry of PUBLIC-CLIENT error codes (#407).
@@ -59,8 +59,16 @@ export type PublicErrorCode = (typeof PUBLIC_ERROR_CODES)[number];
 /** Typed as `string` membership so the scan guard can test raw scanned tokens. */
 export const PUBLIC_ERROR_CODE_SET: ReadonlySet<string> = new Set(PUBLIC_ERROR_CODES);
 
+/**
+ * The HTTP statuses the public surface actually uses. Declared locally (this
+ * file must stay import-free for the vendor-verbatim sync) so the map below is
+ * COMPILE-checked — a typo'd `999` no longer type-checks and then explodes at
+ * runtime behind `publicError`'s status cast.
+ */
+export type PublicErrorStatus = 400 | 401 | 402 | 403 | 404 | 409 | 422 | 429 | 500;
+
 /** HTTP status each code is returned with — docs + the SDK error table mirror this. */
-export const PUBLIC_ERROR_CODE_STATUS: Record<PublicErrorCode, number> = {
+export const PUBLIC_ERROR_CODE_STATUS: Record<PublicErrorCode, PublicErrorStatus> = {
   unauthorized: 401,
   invalid_idempotency_key: 400,
   invalid_json: 400,
