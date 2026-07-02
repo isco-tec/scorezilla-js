@@ -29,6 +29,8 @@ const VENDORED = join(HERE, '../contract/error-codes.generated.ts');
 const NON_SDK_REACHABLE = new Set(['invalid_idempotency_key']);
 // SDK-synthesized codes NOT in the API registry: the 409-by-status fallback
 // (`conflict`) + transport-layer failures (no HTTP response was received).
+// All four ARE union members — this list is exact, not a superset: a union
+// literal must be in the registry OR here, and everything here is in the union.
 const SDK_LOCAL = new Set(['conflict', 'network_error', 'aborted', 'timeout']);
 
 /** The string-literal members of the ScorezillaErrorCode union. */
@@ -43,7 +45,9 @@ function unionCodes(): Set<string> {
     .replace(/\/\/.*$/gm, '');
   const block = src.match(/export type ScorezillaErrorCode =([\s\S]*?);/)?.[1];
   if (!block) throw new Error('ScorezillaErrorCode union not found in src/types.ts');
-  return new Set([...block.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!));
+  // Digit-inclusive so a future `turnstile_v2_failed`-style literal can't
+  // slip past the scan unseen (superset of the snake_case convention).
+  return new Set([...block.matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1]!));
 }
 
 describe('ScorezillaErrorCode mirrors the API contract registry (#407)', () => {
@@ -75,6 +79,16 @@ describe('ScorezillaErrorCode mirrors the API contract registry (#407)', () => {
     expect(
       extra,
       `ScorezillaErrorCode has code(s) not in the API registry — stale/typo, or add to SDK_LOCAL if SDK-synthesized: ${extra.join(', ')}`,
+    ).toEqual([]);
+  });
+
+  it('SDK_LOCAL is exact — every allowlisted code is actually a union member', () => {
+    // Keeps the allowlist honest: an entry that is neither in the registry nor
+    // in the union is dead weight that silently weakens the reverse check.
+    const stale = [...SDK_LOCAL].filter((c) => !union.has(c)).sort();
+    expect(
+      stale,
+      `SDK_LOCAL allowlists code(s) absent from ScorezillaErrorCode: ${stale.join(', ')}`,
     ).toEqual([]);
   });
 });

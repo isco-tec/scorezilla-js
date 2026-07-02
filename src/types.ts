@@ -57,6 +57,16 @@ export type ScorezillaErrorCode =
   | 'turnstile_hostname_mismatch'
   /** 403 — the request Origin is not in the board's embed allowlist. */
   | 'origin_not_allowed'
+  // ── SDK-synthesized transport codes (status 0 — no HTTP response was
+  // received; the API never sends these). They were always produced at
+  // runtime by ScorezillaError and documented in API.md; the union now
+  // matches that reality.
+  /** 0 — the API could not be reached (DNS, connection, CORS-opaque). */
+  | 'network_error'
+  /** 0 — a caller-provided AbortSignal fired before a response arrived. */
+  | 'aborted'
+  /** 0 — the request exceeded `timeoutMs`. */
+  | 'timeout'
   | (string & {});
 
 /** Reason sub-classifier on `out_of_bounds` errors. Open union — see {@link ScorezillaErrorCode}. */
