@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.2
+
+### Patch Changes
+
+- [#72](https://github.com/isco-tec/scorezilla-js/pull/72) [`839acbd`](https://github.com/isco-tec/scorezilla-js/commit/839acbde6294bd8796bc3ee358b86d0b8c878291) Thanks [@isco-tec](https://github.com/isco-tec)! - Type the SDK-synthesized transport codes: `ScorezillaErrorCode` now includes
+  `'network_error'`, `'aborted'`, and `'timeout'` (status 0 — no HTTP response
+  was received). These were always produced at runtime by `ScorezillaError` and
+  documented in `API.md`; the union now matches that reality, so narrowing on
+  them gets autocomplete instead of falling into the open-union tail. Types-only;
+  no runtime change.
+
 ## 0.5.1
 
 ### Patch Changes
