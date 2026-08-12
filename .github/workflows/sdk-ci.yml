@@ -1,12 +1,14 @@
 name: SDK CI
 
-# Per-PR + main-push checks for the scorezilla SDK.
+# Per-PR checks for the scorezilla SDK.
 #
 # `workflow_dispatch` lets us re-run on demand without re-pushing.
 
+# pull_request only (CI-economy audit, 2026-08-12): the push trigger re-ran
+# the identical, already-green commit after every merge. PR checks are the
+# gate; merges are trusted. Deploy/release workflows trigger on their own
+# push and run their own tests, so nothing here loses verification.
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 
