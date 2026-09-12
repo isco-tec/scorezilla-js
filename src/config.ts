@@ -95,8 +95,7 @@ export interface ResolvedConfig {
   readonly warn: ((...args: unknown[]) => void) | undefined;
   readonly userAgent: string | undefined;
   readonly auth:
-    | { kind: 'public'; key: string }
-    | { kind: 'secret'; keyId: string; secret: string };
+    { kind: 'public'; key: string } | { kind: 'secret'; keyId: string; secret: string };
 }
 
 /**
