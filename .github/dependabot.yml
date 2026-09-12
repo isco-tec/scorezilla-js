@@ -16,14 +16,13 @@ updates:
   - package-ecosystem: npm
     directory: '/'
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: '06:00'
       timezone: Asia/Jerusalem
     open-pull-requests-limit: 5
     labels:
       - dependencies
-    # Group patch + minor bumps into a single PR per week. Majors stay
+    # Group patch + minor bumps into a single PR per month. Majors stay
     # individual so they can be reviewed on their own merits.
     groups:
       dev-dependencies-non-major:
@@ -43,8 +42,7 @@ updates:
   - package-ecosystem: github-actions
     directory: '/'
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: '06:00'
       timezone: Asia/Jerusalem
     open-pull-requests-limit: 5
