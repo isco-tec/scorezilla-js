@@ -82,13 +82,7 @@ export type UsageCapReason = 'over_cap' | 'suspended' | (string & {});
 
 /** Tier identifier mirrored from the server's `PlanConfig.key`. */
 export type BillingTier =
-  | 'free'
-  | 'indie'
-  | 'pro'
-  | 'studio'
-  | 'enterprise'
-  | 'suspended'
-  | (string & {});
+  'free' | 'indie' | 'pro' | 'studio' | 'enterprise' | 'suspended' | (string & {});
 
 /** Successful API response envelope. The `T` is the per-route payload. */
 export type ApiSuccess<T> = { ok: true } & T;

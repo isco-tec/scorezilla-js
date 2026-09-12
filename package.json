@@ -173,7 +173,7 @@
     "globals": "^17.6.0",
     "jose": "^6.1.0",
     "jsdom": "^29.1.1",
-    "prettier": "^3.4.2",
+    "prettier": "3.9.6",
     "size-limit": "^11.1.6",
     "tsup": "^8.3.5",
     "typescript": "^5.6.0",
