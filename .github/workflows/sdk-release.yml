@@ -106,26 +106,29 @@ jobs:
 
       # ─── The actual release step.
       #
-      # `version:` script runs when there ARE unmerged changesets — Changesets
+      # `version-script` runs when there ARE unmerged changesets — Changesets
       # bumps package.json + CHANGELOG.md and opens/updates the PR.
-      # `publish:` script runs when there are NO unmerged changesets and the
+      # `publish-script` runs when there are NO unmerged changesets and the
       # tree's version is ahead of what's on npm — publishes to the registry.
-      # The action wires `NODE_AUTH_TOKEN` automatically from NPM_TOKEN.
+      #
+      # changesets/action v2 input names (kebab-case; the v1 names
+      # `version`/`publish`/`title`/`commit`/`createGithubReleases` are
+      # silently ignored by v2). v2 no longer writes ~/.npmrc from NPM_TOKEN:
+      # npm auth comes from setup-node's `registry-url` + NODE_AUTH_TOKEN.
       - name: Changesets — version PR or publish
         id: changesets
         uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         with:
-          version: pnpm changeset:version
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          version-script: pnpm changeset:version
           # publish.sh routes to the right dist-tag based on the version
           # string (stable → `latest`, `-next.N` → `next`, etc.) and adds
           # `--provenance` when NPM_PUBLISH_WITH_PROVENANCE=1 (set above).
-          publish: bash scripts/publish.sh
-          title: 'chore(release): version scorezilla'
-          commit: 'chore(release): version scorezilla'
-          createGithubReleases: true
+          publish-script: bash scripts/publish.sh
+          pr-title: 'chore(release): version scorezilla'
+          commit-message: 'chore(release): version scorezilla'
+          create-github-releases: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # ─── SRI hash generation.

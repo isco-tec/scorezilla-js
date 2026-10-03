@@ -31,12 +31,15 @@ updates:
           - patch
           - minor
     ignore:
-      # Vitest 2.x is the floor (a future major bump is an intentional,
-      # coordinated change — Vitest 3 needs `extends: true` workspace
-      # migration). Re-enable when ready.
+      # Majors whose current release requires Node >= 22 — incompatible with
+      # the Node 20 leg of the unit-test matrix (and `engines.node >=20`).
+      # Re-enable when Node 20 support is dropped. Vitest 5 needs ^22.12;
+      # jsdom 30 needs ^22.22 (its undici 8 fails to start on Node 20).
       - dependency-name: vitest
         update-types: ['version-update:semver-major']
       - dependency-name: '@vitest/*'
+        update-types: ['version-update:semver-major']
+      - dependency-name: jsdom
         update-types: ['version-update:semver-major']
 
   - package-ecosystem: github-actions
