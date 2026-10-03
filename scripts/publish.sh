@@ -45,6 +45,18 @@ else
   echo "Provenance: DISABLED (set NPM_PUBLISH_WITH_PROVENANCE=1 to turn on)"
 fi
 
+# Idempotent guard: if this exact version is already on npm, skip the
+# publish. changesets/action runs the publish script on EVERY push to main
+# that has no pending changesets ("publish any unpublished packages"), and
+# unlike `changeset publish`, a raw `npm publish` doesn't skip versions that
+# already exist — it fails the release job. No `published` sentinel on the
+# skip path, so the post-publish steps (SRI, smoke test, dispatch) stay off.
+# Same guard as scorezilla-mcp's publish.sh.
+if npm view "scorezilla@${VERSION}" version >/dev/null 2>&1; then
+  echo "scorezilla@${VERSION} is already on npm — skipping publish."
+  exit 0
+fi
+
 echo "Publishing scorezilla@${VERSION} under npm dist-tag: ${TAG}"
 
 # We DO NOT `exec` here. Two reasons:
