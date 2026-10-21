@@ -109,8 +109,8 @@ Polyfill compatibility:
 
 | Bundle           | Format | Gzipped |
 | ---------------- | ------ | ------- |
-| `dist/index.js`  | ESM    | ~3.8 KB |
-| `dist/index.cjs` | CJS    | ~4.0 KB |
+| `dist/index.js`  | ESM    | ~4.9 KB |
+| `dist/index.cjs` | CJS    | ~5.1 KB |
 
 These numbers come from `size-limit` simulating a consumer's bundler. Source
 maps ship alongside but aren't counted against the budget. The CI gate caps the
