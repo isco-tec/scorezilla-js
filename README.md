@@ -10,7 +10,7 @@ Official JavaScript / TypeScript SDK for [Scorezilla](https://scorezilla.dev) â€
 focused leaderboard infrastructure for indie games, browser games, and
 AI-vibe-coded games.
 
-- **Tiny.** ~4 KB gzipped. No runtime dependencies.
+- **Tiny.** ~5 KB gzipped. No runtime dependencies.
 - **Universal.** Browser, Node â‰¥ 20, Cloudflare Workers, Bun, Deno.
 - **Typed.** First-class TypeScript with strict types and rich JSDoc.
 - **Safe-by-default.** Automatic retries on transient failures with idempotency
