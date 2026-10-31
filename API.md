@@ -85,6 +85,7 @@ interface SubmitScoreResponse {
   rank: number; // 1-based, after the submit settles.
   totalEntries: number;
   isPersonalBest: boolean;
+  period?: string; // Daily boards only: the UTC day (YYYY-MM-DD) the score was filed under.
 }
 
 const r = await sz.submitScore({
@@ -133,13 +134,14 @@ Violations throw a plain `Error` (not `ScorezillaError`) before any network call
 
 ### `getLeaderboard`
 
-`GET /v1/boards/:boardId/leaderboard?top=&offset=`.
+`GET /v1/boards/:boardId/leaderboard?top=&offset=&period=`.
 
 ```ts
 interface GetLeaderboardInput {
   boardId: string;
   top?: number; // API caps at 1000; default 100.
   offset?: number; // API caps at 1_000_000; default 0.
+  period?: string; // Daily boards only — see "Daily boards" below.
 }
 
 interface LeaderboardResponse {
@@ -148,6 +150,7 @@ interface LeaderboardResponse {
   offset: number;
   limit: number;
   entries: RankedEntry[];
+  period?: string; // Daily boards only: the UTC day this page is for.
 }
 
 interface RankedEntry {
@@ -168,9 +171,20 @@ for (const e of entries) console.log(`${e.rank}. ${e.playerId}: ${e.score}`);
 > the board's tenant is suspended. (On the submit path that same condition
 > surfaces as `usage_cap_exceeded` with `reason: 'suspended'`.)
 
+> **Daily boards (`period`).** A board created with `period: 'daily_utc'`
+> starts empty every UTC day. On such a board, `submitScore` returns the
+> `period` (UTC day, `YYYY-MM-DD`) the score was filed under, and `rank` /
+> `totalEntries` count that day only. The three read methods accept an optional
+> `period: 'YYYY-MM-DD'` (default: today, UTC) and echo the day they answered
+> for in the response's `period`. Only today and the 30 days before it are
+> accepted; a malformed, future, or older day — or **any** `period` on an
+> all-time board — is rejected with `invalid_input` (400). The SDK does not
+> validate the format locally; the server is authoritative. All-time boards
+> never return `period`.
+
 ### `getPlayerRank`
 
-`GET /v1/boards/:boardId/players/:playerId/rank`. "No entry yet" is a normal
+`GET /v1/boards/:boardId/players/:playerId/rank?period=`. "No entry yet" is a normal
 result (`{ ranked: false }`), **not** an error — narrow on `ranked` before
 reading `rank`. A `not_found` (404) is thrown only when the board doesn't exist.
 
@@ -178,6 +192,7 @@ reading `rank`. A `not_found` (404) is thrown only when the board doesn't exist.
 interface GetPlayerRankInput {
   boardId: string;
   playerId: string;
+  period?: string; // Daily boards only (YYYY-MM-DD); default today (UTC).
 }
 
 type PlayerRankResponse =
@@ -190,8 +205,17 @@ type PlayerRankResponse =
       score: number;
       submittedAt: number;
       totalEntries: number;
+      period?: string; // Daily boards only.
     }
-  | { ok: true; boardId: string; playerId: string; ranked: false; rank: null; score: null };
+  | {
+      ok: true;
+      boardId: string;
+      playerId: string;
+      ranked: false;
+      rank: null;
+      score: null;
+      period?: string; // Daily boards only.
+    };
 ```
 
 ```ts
@@ -202,7 +226,7 @@ else console.log('No submission yet.');
 
 ### `getWindowAround`
 
-`GET /v1/boards/:boardId/players/:playerId/window?before=&after=`. Returns the
+`GET /v1/boards/:boardId/players/:playerId/window?before=&after=&period=`. Returns the
 slice of entries surrounding a player.
 
 ```ts
@@ -211,6 +235,7 @@ interface GetWindowAroundInput {
   playerId: string;
   before?: number; // API caps at 100; default 5.
   after?: number; // API caps at 100; default 5.
+  period?: string; // Daily boards only (YYYY-MM-DD); default today (UTC).
 }
 
 interface WindowAroundResponse {
@@ -220,6 +245,7 @@ interface WindowAroundResponse {
   before: number;
   after: number;
   entries: RankedEntry[];
+  period?: string; // Daily boards only.
 }
 ```
 

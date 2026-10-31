@@ -28,6 +28,8 @@ export interface HeadlessSubmitResult {
   rank: number;
   totalEntries: number;
   isPersonalBest: boolean;
+  /** UTC day (`YYYY-MM-DD`) the score was filed under. Daily boards only. */
+  period?: string;
 }
 
 /** Input for {@link HeadlessClient.submit}. */
@@ -49,6 +51,9 @@ export interface HeadlessLeaderboardInput {
   boardId: string;
   top?: number;
   offset?: number;
+  /** UTC day `YYYY-MM-DD` to read. Daily boards only; omit for today (UTC).
+   *  An out-of-range day resolves to `[]` like any other failure. */
+  period?: string;
   signal?: AbortSignal;
 }
 
@@ -77,6 +82,7 @@ export function createHeadlessClient(config: PublicKeyConfig): HeadlessClient {
           rank: r.rank,
           totalEntries: r.totalEntries,
           isPersonalBest: r.isPersonalBest,
+          ...(r.period !== undefined ? { period: r.period } : {}),
         };
       } catch {
         return null;

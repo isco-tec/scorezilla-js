@@ -190,6 +190,74 @@ describe('wire type fixtures (compile-time)', () => {
 // Runtime tests on the type guards.
 // ─────────────────────────────────────────────────────────────────────────
 
+describe('wire type fixtures — daily boards (compile-time)', () => {
+  it('every period-bearing response accepts an optional period', () => {
+    const submit: ApiSuccess<SubmitScoreResponse> = {
+      ok: true,
+      boardId: 'b',
+      keyId: 'k',
+      rank: 1,
+      totalEntries: 1,
+      isPersonalBest: true,
+      period: '2026-10-31',
+    };
+    const board: ApiSuccess<LeaderboardResponse> = {
+      ok: true,
+      boardId: 'b',
+      offset: 0,
+      limit: 10,
+      entries: [],
+      period: '2026-10-30',
+    };
+    const ranked: ApiSuccess<PlayerRankResponse> = {
+      ok: true,
+      boardId: 'b',
+      playerId: 'p',
+      ranked: true,
+      rank: 1,
+      score: 1,
+      submittedAt: 1,
+      totalEntries: 1,
+      period: '2026-10-30',
+    };
+    const unranked: ApiSuccess<PlayerRankResponse> = {
+      ok: true,
+      boardId: 'b',
+      playerId: 'p',
+      ranked: false,
+      rank: null,
+      score: null,
+      period: '2026-10-30',
+    };
+    const win: ApiSuccess<WindowAroundResponse> = {
+      ok: true,
+      boardId: 'b',
+      playerId: 'p',
+      before: 0,
+      after: 0,
+      entries: [],
+      period: '2026-10-30',
+    };
+    // All-time boards: period is simply absent.
+    const allTime: ApiSuccess<LeaderboardResponse> = {
+      ok: true,
+      boardId: 'b',
+      offset: 0,
+      limit: 10,
+      entries: [],
+    };
+    const p: string | undefined = submit.period;
+    expect([p, board.period, ranked.period, unranked.period, win.period, allTime.period]).toEqual([
+      '2026-10-31',
+      '2026-10-30',
+      '2026-10-30',
+      '2026-10-30',
+      '2026-10-30',
+      undefined,
+    ]);
+  });
+});
+
 describe('isApiSuccess', () => {
   it('returns true for a success envelope', () => {
     const r: ApiResponse<{ x: number }> = { ok: true, x: 1 };

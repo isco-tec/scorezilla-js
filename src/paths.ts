@@ -24,7 +24,7 @@ function encodeSegment(value: unknown, label: 'boardId' | 'playerId' | 'gameId')
   return encodeURIComponent(value);
 }
 
-function buildQueryString(params: Record<string, number | undefined>): string {
+function buildQueryString(params: Record<string, number | string | undefined>): string {
   const usp = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined) usp.set(k, String(v));
@@ -53,19 +53,42 @@ export interface LeaderboardQuery {
   top?: number;
   /** Offset into the sorted board (the API caps at 1_000_000). Defaults server-side to 0. */
   offset?: number;
+  /**
+   * UTC day to read, as `YYYY-MM-DD`. **Daily boards only** (`period:
+   * 'daily_utc'`). Omit it to read today (UTC) — the server's default.
+   * Only today and the 30 days before it are accepted; a malformed, future,
+   * or older day — or any `period` on an all-time board — is rejected with
+   * `400 invalid_input`. Not validated client-side: the server is authoritative.
+   */
+  period?: string;
 }
 
-/** `GET /v1/boards/:boardId/leaderboard?top=&offset=` */
+/** `GET /v1/boards/:boardId/leaderboard?top=&offset=&period=` */
 export function getLeaderboardPath(boardId: string, q?: LeaderboardQuery): string {
   return (
     `/v1/boards/${encodeSegment(boardId, 'boardId')}/leaderboard` +
-    buildQueryString({ top: q?.top, offset: q?.offset })
+    buildQueryString({ top: q?.top, offset: q?.offset, period: q?.period })
   );
 }
 
-/** `GET /v1/boards/:boardId/players/:playerId/rank` */
-export function getPlayerRankPath(boardId: string, playerId: string): string {
-  return `/v1/boards/${encodeSegment(boardId, 'boardId')}/players/${encodeSegment(playerId, 'playerId')}/rank`;
+/** Options for {@link getPlayerRankPath}. */
+export interface RankQuery {
+  /**
+   * UTC day to read, as `YYYY-MM-DD`. **Daily boards only** (`period:
+   * 'daily_utc'`). Omit it to read today (UTC) — the server's default.
+   * Only today and the 30 days before it are accepted; a malformed, future,
+   * or older day — or any `period` on an all-time board — is rejected with
+   * `400 invalid_input`. Not validated client-side: the server is authoritative.
+   */
+  period?: string;
+}
+
+/** `GET /v1/boards/:boardId/players/:playerId/rank?period=` */
+export function getPlayerRankPath(boardId: string, playerId: string, q?: RankQuery): string {
+  return (
+    `/v1/boards/${encodeSegment(boardId, 'boardId')}/players/${encodeSegment(playerId, 'playerId')}/rank` +
+    buildQueryString({ period: q?.period })
+  );
 }
 
 /** Options for {@link getWindowAroundPath}. */
@@ -74,9 +97,17 @@ export interface WindowAroundQuery {
   before?: number;
   /** Entries strictly below the player (the API caps at 100). Defaults server-side to 5. */
   after?: number;
+  /**
+   * UTC day to read, as `YYYY-MM-DD`. **Daily boards only** (`period:
+   * 'daily_utc'`). Omit it to read today (UTC) — the server's default.
+   * Only today and the 30 days before it are accepted; a malformed, future,
+   * or older day — or any `period` on an all-time board — is rejected with
+   * `400 invalid_input`. Not validated client-side: the server is authoritative.
+   */
+  period?: string;
 }
 
-/** `GET /v1/boards/:boardId/players/:playerId/window?before=&after=` */
+/** `GET /v1/boards/:boardId/players/:playerId/window?before=&after=&period=` */
 export function getWindowAroundPath(
   boardId: string,
   playerId: string,
@@ -84,6 +115,6 @@ export function getWindowAroundPath(
 ): string {
   return (
     `/v1/boards/${encodeSegment(boardId, 'boardId')}/players/${encodeSegment(playerId, 'playerId')}/window` +
-    buildQueryString({ before: q?.before, after: q?.after })
+    buildQueryString({ before: q?.before, after: q?.after, period: q?.period })
   );
 }

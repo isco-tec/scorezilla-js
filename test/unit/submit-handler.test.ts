@@ -92,6 +92,32 @@ describe('createScoreSubmitHandler', () => {
     expect(body).toMatchObject({ boardId: 'board-1', playerId: 'verified-user', score: 42 });
   });
 
+  it('passes the daily-board period through when the API returns one', async () => {
+    const { handler } = makeHandler({
+      fetchResponse: () =>
+        new Response(
+          JSON.stringify({
+            ok: true,
+            boardId: 'b',
+            keyId: 'k',
+            rank: 1,
+            totalEntries: 2,
+            isPersonalBest: true,
+            period: '2026-10-31',
+          }),
+          { headers: { 'Content-Type': 'application/json' } },
+        ),
+    });
+    const res = await handler(postReq({ score: 42 }));
+    expect(await res.json()).toEqual({
+      ok: true,
+      rank: 1,
+      totalEntries: 2,
+      isPersonalBest: true,
+      period: '2026-10-31',
+    });
+  });
+
   it('derives playerId from verify, IGNORING any playerId in the request body', async () => {
     const { handler, fetchImpl } = makeHandler();
     const res = await handler(postReq({ score: 10, playerId: 'attacker-uuid' }));

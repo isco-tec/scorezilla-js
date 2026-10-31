@@ -98,12 +98,20 @@ export interface GetLeaderboardInput extends CancellableInput {
   top?: number | undefined;
   /** Offset into the sorted board (API caps at 1_000_000; default 0). */
   offset?: number | undefined;
+  /** UTC day `YYYY-MM-DD` to read. Daily boards only; omit for today (UTC).
+   *  Today and the 30 days before it are accepted — anything else, or any
+   *  `period` on an all-time board, is a `400 invalid_input`. */
+  period?: string | undefined;
 }
 
 /** Input for {@link Scorezilla.getPlayerRank}. */
 export interface GetPlayerRankInput extends CancellableInput {
   boardId: string;
   playerId: string;
+  /** UTC day `YYYY-MM-DD` to read. Daily boards only; omit for today (UTC).
+   *  Today and the 30 days before it are accepted — anything else, or any
+   *  `period` on an all-time board, is a `400 invalid_input`. */
+  period?: string | undefined;
 }
 
 /** Input for {@link Scorezilla.getWindowAround}. */
@@ -114,6 +122,10 @@ export interface GetWindowAroundInput extends CancellableInput {
   before?: number | undefined;
   /** Entries strictly below the player (API caps at 100; default 5). */
   after?: number | undefined;
+  /** UTC day `YYYY-MM-DD` to read. Daily boards only; omit for today (UTC).
+   *  Today and the 30 days before it are accepted — anything else, or any
+   *  `period` on an all-time board, is a `400 invalid_input`. */
+  period?: string | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -251,6 +263,7 @@ export class Scorezilla {
       path: getLeaderboardPath(input.boardId, {
         ...(input.top !== undefined ? { top: input.top } : {}),
         ...(input.offset !== undefined ? { offset: input.offset } : {}),
+        ...(input.period !== undefined ? { period: input.period } : {}),
       }),
       method: 'GET',
       signal: input.signal,
@@ -262,7 +275,11 @@ export class Scorezilla {
    *  a missing board. */
   async getPlayerRank(input: GetPlayerRankInput): Promise<ApiSuccess<PlayerRankResponse>> {
     return this.#request<ApiSuccess<PlayerRankResponse>>({
-      path: getPlayerRankPath(input.boardId, input.playerId),
+      path: getPlayerRankPath(
+        input.boardId,
+        input.playerId,
+        input.period !== undefined ? { period: input.period } : undefined,
+      ),
       method: 'GET',
       signal: input.signal,
     });
@@ -274,6 +291,7 @@ export class Scorezilla {
       path: getWindowAroundPath(input.boardId, input.playerId, {
         ...(input.before !== undefined ? { before: input.before } : {}),
         ...(input.after !== undefined ? { after: input.after } : {}),
+        ...(input.period !== undefined ? { period: input.period } : {}),
       }),
       method: 'GET',
       signal: input.signal,
@@ -569,6 +587,7 @@ export function createScoreSubmitHandler(
           rank: result.rank,
           totalEntries: result.totalEntries,
           isPersonalBest: result.isPersonalBest,
+          ...(result.period !== undefined ? { period: result.period } : {}),
         },
         200,
         cors,

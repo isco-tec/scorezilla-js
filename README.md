@@ -84,13 +84,41 @@ The four public methods:
 
 ```ts
 await sz.submitScore({ boardId, playerId, score, metadata? });
-await sz.getLeaderboard({ boardId, top?, offset? });
-await sz.getPlayerRank({ boardId, playerId });
-await sz.getWindowAround({ boardId, playerId, before?, after? });
+await sz.getLeaderboard({ boardId, top?, offset?, period? });
+await sz.getPlayerRank({ boardId, playerId, period? });
+await sz.getWindowAround({ boardId, playerId, before?, after?, period? });
 ```
 
 See [**API.md**](./API.md) for the full reference, including every response
 field, every error code, and advanced patterns.
+
+## Daily boards
+
+A board created with `period: 'daily_utc'` starts empty every UTC day — a
+"today's best" leaderboard. Each player keeps one best score per day. The
+period is set when the board is created and never changes.
+
+**Submitting is unchanged.** On a daily board the response also carries
+`period`, the UTC day (`YYYY-MM-DD`) the score was filed under, and `rank` /
+`totalEntries` count only that day:
+
+```ts
+const r = await sz.submitScore({ boardId, playerId, score: 4200 });
+if (r.period) console.log(`Rank ${r.rank} of ${r.totalEntries} today (${r.period})`);
+```
+
+**Reads default to today.** Pass `period` to look at a past day — today and the
+30 days before it are available:
+
+```ts
+const today = await sz.getLeaderboard({ boardId, top: 10 }); // today (UTC)
+const yesterday = await sz.getLeaderboard({ boardId, top: 10, period: '2026-10-30' });
+const me = await sz.getPlayerRank({ boardId, playerId, period: '2026-10-30' });
+```
+
+Every daily-board read echoes the day it answered for in `period`. A
+malformed, future, or too-old day — or any `period` on an all-time board — is
+rejected with `invalid_input` (400). All-time boards never return `period`.
 
 ## Headless, never-throws client (`scorezilla/headless`)
 
@@ -111,6 +139,7 @@ if (result) console.log(`rank ${result.rank} of ${result.totalEntries}`);
 // Never throws — `[]` on any failure. Each entry has at least
 // { rank, playerId, name?, score }.
 const top = await sz.getLeaderboard({ boardId, top: 10 });
+// On a daily board, add `period: 'YYYY-MM-DD'` to read a past day.
 ```
 
 When a game is embedded **cross-site** (itch.io, a portal) and the board has

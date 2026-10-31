@@ -84,3 +84,54 @@ describe('getWindowAroundPath', () => {
     expect(() => getWindowAroundPath('bid', '')).toThrow(/playerId must be a non-empty string/);
   });
 });
+
+describe('period (daily boards)', () => {
+  it('getLeaderboardPath serializes period alone', () => {
+    expect(getLeaderboardPath('bid', { period: '2026-10-30' })).toBe(
+      '/v1/boards/bid/leaderboard?period=2026-10-30',
+    );
+  });
+
+  it('getLeaderboardPath combines period with top + offset', () => {
+    expect(getLeaderboardPath('bid', { top: 10, offset: 20, period: '2026-10-30' })).toBe(
+      '/v1/boards/bid/leaderboard?top=10&offset=20&period=2026-10-30',
+    );
+  });
+
+  it('getLeaderboardPath omits period when undefined', () => {
+    expect(getLeaderboardPath('bid', { top: 10, period: undefined })).toBe(
+      '/v1/boards/bid/leaderboard?top=10',
+    );
+  });
+
+  it('getPlayerRankPath keeps the 2-arg form unchanged', () => {
+    expect(getPlayerRankPath('bid', 'alice', {})).toBe('/v1/boards/bid/players/alice/rank');
+    expect(getPlayerRankPath('bid', 'alice', { period: undefined })).toBe(
+      '/v1/boards/bid/players/alice/rank',
+    );
+  });
+
+  it('getPlayerRankPath serializes period', () => {
+    expect(getPlayerRankPath('bid', 'alice', { period: '2026-10-30' })).toBe(
+      '/v1/boards/bid/players/alice/rank?period=2026-10-30',
+    );
+  });
+
+  it('getWindowAroundPath serializes period alone and with before + after', () => {
+    expect(getWindowAroundPath('bid', 'alice', { period: '2026-10-30' })).toBe(
+      '/v1/boards/bid/players/alice/window?period=2026-10-30',
+    );
+    expect(getWindowAroundPath('bid', 'alice', { before: 2, after: 3, period: '2026-10-30' })).toBe(
+      '/v1/boards/bid/players/alice/window?before=2&after=3&period=2026-10-30',
+    );
+  });
+
+  it('URL-encodes period (no client-side format validation — server is authoritative)', () => {
+    expect(getLeaderboardPath('bid', { period: '2026/10 30&x=1' })).toBe(
+      '/v1/boards/bid/leaderboard?period=2026%2F10+30%26x%3D1',
+    );
+    expect(getPlayerRankPath('bid', 'alice', { period: 'a&b' })).toBe(
+      '/v1/boards/bid/players/alice/rank?period=a%26b',
+    );
+  });
+});

@@ -520,3 +520,107 @@ describe('createClient', () => {
     void sz1;
   });
 });
+
+describe('Scorezilla — period (daily boards)', () => {
+  function urlOf(fetchImpl: FetchImpl): string {
+    return (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+  }
+
+  it('getLeaderboard forwards period alongside top/offset and echoes it back', async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        ok: true,
+        boardId: 'b',
+        offset: 0,
+        limit: 10,
+        entries: [],
+        period: '2026-10-30',
+      }),
+    ) as unknown as FetchImpl;
+    const sz = makeClient(fetchImpl);
+    const r = await sz.getLeaderboard({ boardId: 'b', top: 10, period: '2026-10-30' });
+    expect(urlOf(fetchImpl)).toBe(
+      'https://api.example.com/v1/boards/b/leaderboard?top=10&period=2026-10-30',
+    );
+    expect(r.period).toBe('2026-10-30');
+  });
+
+  it('getPlayerRank forwards period (ranked:false still echoes it)', async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        ok: true,
+        boardId: 'b',
+        playerId: 'alice',
+        ranked: false,
+        rank: null,
+        score: null,
+        period: '2026-10-30',
+      }),
+    ) as unknown as FetchImpl;
+    const sz = makeClient(fetchImpl);
+    const r = await sz.getPlayerRank({ boardId: 'b', playerId: 'alice', period: '2026-10-30' });
+    expect(urlOf(fetchImpl)).toBe(
+      'https://api.example.com/v1/boards/b/players/alice/rank?period=2026-10-30',
+    );
+    expect(r.period).toBe('2026-10-30');
+  });
+
+  it('getPlayerRank without period keeps the bare URL', async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        ok: true,
+        boardId: 'b',
+        playerId: 'alice',
+        ranked: false,
+        rank: null,
+        score: null,
+      }),
+    ) as unknown as FetchImpl;
+    const sz = makeClient(fetchImpl);
+    await sz.getPlayerRank({ boardId: 'b', playerId: 'alice' });
+    expect(urlOf(fetchImpl)).toBe('https://api.example.com/v1/boards/b/players/alice/rank');
+  });
+
+  it('getWindowAround forwards period with before/after', async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        ok: true,
+        boardId: 'b',
+        playerId: 'alice',
+        before: 1,
+        after: 1,
+        entries: [],
+        period: '2026-10-30',
+      }),
+    ) as unknown as FetchImpl;
+    const sz = makeClient(fetchImpl);
+    const r = await sz.getWindowAround({
+      boardId: 'b',
+      playerId: 'alice',
+      before: 1,
+      after: 1,
+      period: '2026-10-30',
+    });
+    expect(urlOf(fetchImpl)).toBe(
+      'https://api.example.com/v1/boards/b/players/alice/window?before=1&after=1&period=2026-10-30',
+    );
+    expect(r.period).toBe('2026-10-30');
+  });
+
+  it('submitScore surfaces the period the score was filed under', async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        ok: true,
+        boardId: 'b',
+        keyId: 'k',
+        rank: 1,
+        totalEntries: 4,
+        isPersonalBest: true,
+        period: '2026-10-31',
+      }),
+    ) as unknown as FetchImpl;
+    const sz = makeClient(fetchImpl);
+    const r = await sz.submitScore({ boardId: 'b', playerId: 'alice', score: 10 });
+    expect(r.period).toBe('2026-10-31');
+  });
+});
