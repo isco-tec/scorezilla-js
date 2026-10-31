@@ -31,6 +31,8 @@ import {
   getPlayerRankPath,
   getWindowAroundPath,
   submitScorePath,
+  type LeaderboardQuery,
+  type WindowAroundQuery,
 } from './paths';
 import { request, type RequestOptions } from './transport';
 import type {
@@ -96,12 +98,20 @@ export interface GetLeaderboardInput extends CancellableInput {
   top?: number | undefined;
   /** Offset into the sorted board. API caps at 1_000_000; default 0. */
   offset?: number | undefined;
+  /** UTC day `YYYY-MM-DD` to read. Daily boards only; omit for today (UTC).
+   *  Today and the 30 days before it are accepted — anything else, or any
+   *  `period` on an all-time board, is a `400 invalid_input`. */
+  period?: string | undefined;
 }
 
 /** Input for {@link Scorezilla.getPlayerRank}. */
 export interface GetPlayerRankInput extends CancellableInput {
   boardId: string;
   playerId: string;
+  /** UTC day `YYYY-MM-DD` to read. Daily boards only; omit for today (UTC).
+   *  Today and the 30 days before it are accepted — anything else, or any
+   *  `period` on an all-time board, is a `400 invalid_input`. */
+  period?: string | undefined;
 }
 
 /** Input for {@link Scorezilla.getWindowAround}. */
@@ -112,6 +122,10 @@ export interface GetWindowAroundInput extends CancellableInput {
   before?: number | undefined;
   /** Entries strictly below the player. API caps at 100; default 5. */
   after?: number | undefined;
+  /** UTC day `YYYY-MM-DD` to read. Daily boards only; omit for today (UTC).
+   *  Today and the 30 days before it are accepted — anything else, or any
+   *  `period` on an all-time board, is a `400 invalid_input`. */
+  period?: string | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -285,7 +299,8 @@ export class Scorezilla {
   /**
    * Fetch the top-N leaderboard for a board.
    *
-   * Maps to `GET /v1/boards/:boardId/leaderboard`.
+   * Maps to `GET /v1/boards/:boardId/leaderboard`. On a daily board, pass
+   * `period: 'YYYY-MM-DD'` to read a past UTC day (default: today).
    *
    * @example
    * ```ts
@@ -298,9 +313,10 @@ export class Scorezilla {
    * @stability stable
    */
   async getLeaderboard(input: GetLeaderboardInput): Promise<ApiSuccess<LeaderboardResponse>> {
-    const q: { top?: number; offset?: number } = {};
+    const q: LeaderboardQuery = {};
     if (input.top !== undefined) q.top = input.top;
     if (input.offset !== undefined) q.offset = input.offset;
+    if (input.period !== undefined) q.period = input.period;
     return this.#request<ApiSuccess<LeaderboardResponse>>({
       path: getLeaderboardPath(input.boardId, q),
       method: 'GET',
@@ -330,7 +346,11 @@ export class Scorezilla {
    */
   async getPlayerRank(input: GetPlayerRankInput): Promise<ApiSuccess<PlayerRankResponse>> {
     return this.#request<ApiSuccess<PlayerRankResponse>>({
-      path: getPlayerRankPath(input.boardId, input.playerId),
+      path: getPlayerRankPath(
+        input.boardId,
+        input.playerId,
+        input.period !== undefined ? { period: input.period } : undefined,
+      ),
       method: 'GET',
       signal: input.signal,
     });
@@ -339,7 +359,7 @@ export class Scorezilla {
   /**
    * Fetch the slice of entries surrounding a player.
    *
-   * Maps to `GET /v1/boards/:boardId/players/:playerId/window?before=&after=`.
+   * Maps to `GET /v1/boards/:boardId/players/:playerId/window?before=&after=&period=`.
    *
    * @example
    * ```ts
@@ -353,9 +373,10 @@ export class Scorezilla {
    * @stability stable
    */
   async getWindowAround(input: GetWindowAroundInput): Promise<ApiSuccess<WindowAroundResponse>> {
-    const q: { before?: number; after?: number } = {};
+    const q: WindowAroundQuery = {};
     if (input.before !== undefined) q.before = input.before;
     if (input.after !== undefined) q.after = input.after;
+    if (input.period !== undefined) q.period = input.period;
     return this.#request<ApiSuccess<WindowAroundResponse>>({
       path: getWindowAroundPath(input.boardId, input.playerId, q),
       method: 'GET',

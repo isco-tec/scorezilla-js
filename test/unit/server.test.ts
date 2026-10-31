@@ -440,3 +440,40 @@ describe('Scorezilla server — error surface mirrors the public-key client', ()
     }
   });
 });
+
+describe('Scorezilla server — period (daily boards)', () => {
+  function urlOf(fetchImpl: FetchImpl): string {
+    return (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+  }
+
+  it('forwards period on all three read methods', async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ ok: true, boardId: 'b', offset: 0, limit: 10, entries: [] }),
+    ) as unknown as FetchImpl;
+    const sz = new Scorezilla({ ...VALID_CONFIG, fetch: fetchImpl });
+
+    await sz.getLeaderboard({ boardId: 'b', top: 5, period: '2026-10-30' });
+    await sz.getPlayerRank({ boardId: 'b', playerId: 'a', period: '2026-10-30' });
+    await sz.getWindowAround({ boardId: 'b', playerId: 'a', after: 2, period: '2026-10-30' });
+    const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls[0][0]).toContain('/v1/boards/b/leaderboard?top=5&period=2026-10-30');
+    expect(calls[1][0]).toContain('/v1/boards/b/players/a/rank?period=2026-10-30');
+    expect(calls[2][0]).toContain('/v1/boards/b/players/a/window?after=2&period=2026-10-30');
+  });
+
+  it('omits period when not provided', async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        ok: true,
+        boardId: 'b',
+        playerId: 'a',
+        ranked: false,
+        rank: null,
+        score: null,
+      }),
+    ) as unknown as FetchImpl;
+    const sz = new Scorezilla({ ...VALID_CONFIG, fetch: fetchImpl });
+    await sz.getPlayerRank({ boardId: 'b', playerId: 'a' });
+    expect(urlOf(fetchImpl)).toMatch(/\/players\/a\/rank$/);
+  });
+});

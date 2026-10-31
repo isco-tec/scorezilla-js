@@ -151,6 +151,10 @@ export interface SubmitScoreResponse {
   rank: number;
   totalEntries: number;
   isPersonalBest: boolean;
+  /** The server's current UTC day (`YYYY-MM-DD`) the score was filed under.
+   *  Present only on daily boards (`period: 'daily_utc'`), where `rank` and
+   *  `totalEntries` count that day alone. Absent on all-time boards. */
+  period?: string;
 }
 
 /** Payload from `GET /v1/boards/:boardId/leaderboard`. */
@@ -159,6 +163,9 @@ export interface LeaderboardResponse {
   offset: number;
   limit: number;
   entries: RankedEntry[];
+  /** The UTC day (`YYYY-MM-DD`) this page belongs to. Present only on daily
+   *  boards (`period: 'daily_utc'`); absent on all-time boards. */
+  period?: string;
 }
 
 /**
@@ -185,6 +192,8 @@ export type PlayerRankResponse =
       score: number;
       submittedAt: number;
       totalEntries: number;
+      /** UTC day (`YYYY-MM-DD`) the rank is for. Daily boards only. */
+      period?: string;
     }
   | {
       boardId: string;
@@ -192,6 +201,8 @@ export type PlayerRankResponse =
       ranked: false;
       rank: null;
       score: null;
+      /** UTC day (`YYYY-MM-DD`) that was checked. Daily boards only. */
+      period?: string;
     };
 
 /** Payload from `GET /v1/boards/:boardId/players/:playerId/window`. */
@@ -201,6 +212,9 @@ export interface WindowAroundResponse {
   before: number;
   after: number;
   entries: RankedEntry[];
+  /** The UTC day (`YYYY-MM-DD`) this window belongs to. Present only on daily
+   *  boards (`period: 'daily_utc'`); absent on all-time boards. */
+  period?: string;
 }
 
 // ---------------------------------------------------------------------------

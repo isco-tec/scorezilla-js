@@ -158,3 +158,45 @@ describe('isCrossOrigin', () => {
     expect(typeof isCrossOrigin('https://game.example.com')).toBe('boolean');
   });
 });
+
+describe('createHeadlessClient — period (daily boards)', () => {
+  it('submit() carries period through when the board is daily', async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        ok: true,
+        boardId: 'b',
+        keyId: 'k',
+        rank: 2,
+        totalEntries: 9,
+        isPersonalBest: false,
+        period: '2026-10-31',
+      }),
+    ) as unknown as FetchImpl;
+    const sz = makeHeadless(fetchImpl);
+    const result = await sz.submit({ boardId: 'b', playerId: 'p', score: 5 });
+    expect(result).toEqual({
+      ok: true,
+      rank: 2,
+      totalEntries: 9,
+      isPersonalBest: false,
+      period: '2026-10-31',
+    });
+  });
+
+  it('getLeaderboard() forwards period on the wire', async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        ok: true,
+        boardId: 'b',
+        offset: 0,
+        limit: 5,
+        entries: [],
+        period: '2026-10-30',
+      }),
+    ) as unknown as FetchImpl;
+    const sz = makeHeadless(fetchImpl);
+    await sz.getLeaderboard({ boardId: 'b', top: 5, period: '2026-10-30' });
+    const [url] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe('https://api.example.com/v1/boards/b/leaderboard?top=5&period=2026-10-30');
+  });
+});
