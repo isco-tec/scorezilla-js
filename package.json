@@ -175,7 +175,7 @@
     "jsdom": "^29.1.1",
     "prettier": "3.9.10",
     "size-limit": "^11.1.6",
-    "tsup": "^8.3.5",
+    "tsup": "^9.0.0",
     "typescript": "^5.6.0",
     "typescript-eslint": "^8.18.0",
     "vite": "^8.3.2",
